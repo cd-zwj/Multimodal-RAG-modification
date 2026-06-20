@@ -86,8 +86,8 @@
                 <span class="font-medium truncate max-w-[200px] md:max-w-xs" :title="doc.filename">{{ doc.filename }}</span>
               </td>
               <td class="p-sm text-on-surface-variant">{{ getFileExtension(doc.filename) }}</td>
-              <td class="p-sm text-on-surface-variant tabular-nums">{{ formatBytes(doc.size) }}</td>
-              <td class="p-sm text-on-surface-variant tabular-nums">{{ doc.chunksCount || '-' }}</td>
+              <td class="p-sm text-on-surface-variant tabular-nums">{{ formatBytes(doc.fileSize) }}</td>
+              <td class="p-sm text-on-surface-variant tabular-nums">{{ doc.chunkCount || '-' }}</td>
               <td class="p-sm">
                 <div 
                   class="inline-flex items-center gap-xs border rounded px-xs py-xs"
@@ -282,11 +282,11 @@
               </div>
               <div class="flex justify-between">
                 <span class="text-on-surface-variant font-body-sm">文件大小:</span>
-                <span class="font-medium text-on-background font-body-sm">{{ formatBytes(activeDocDetails.size) }}</span>
+                <span class="font-medium text-on-background font-body-sm">{{ formatBytes(activeDocDetails.fileSize) }}</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-on-surface-variant font-body-sm">切片总数:</span>
-                <span class="font-medium text-on-background font-body-sm">{{ activeDocDetails.chunksCount || 0 }}</span>
+                <span class="font-medium text-on-background font-body-sm">{{ activeDocDetails.chunkCount || 0 }}</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-on-surface-variant font-body-sm">更新时间:</span>

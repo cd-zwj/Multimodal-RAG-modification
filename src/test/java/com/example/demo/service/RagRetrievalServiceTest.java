@@ -64,6 +64,9 @@ class RagRetrievalServiceTest {
     @Mock
     private RagUnitService ragUnitService;
 
+    @Mock
+    private VectorStoreWriteService vectorStoreWriteService;
+
     private RagRetrievalService ragRetrievalService;
     private HierarchicalRetrievalStrategy hierarchicalStrategy;
     private FlatRetrievalStrategy flatStrategy;
@@ -77,7 +80,7 @@ class RagRetrievalServiceTest {
 
         RerankHelper rerankHelper = new RerankHelper(rerankModel);
         UserFilterBuilder userFilterBuilder = new UserFilterBuilder();
-        KnowledgeTextBuilder knowledgeTextBuilder = new KnowledgeTextBuilder(ragUnitQueryRepository, ragUnitService);
+        KnowledgeTextBuilder knowledgeTextBuilder = new KnowledgeTextBuilder(ragUnitQueryRepository, vectorStoreWriteService);
 
         hierarchicalStrategy = new HierarchicalRetrievalStrategy(
                 summaryVectorStore, ragUnitQueryRepository, rerankHelper, knowledgeTextBuilder, hierarchyConfig, userFilterBuilder);
@@ -92,6 +95,7 @@ class RagRetrievalServiceTest {
                 knowledgeTextBuilder,
                 ragUnitQueryRepository,
                 ragUnitService,
+                vectorStoreWriteService,
                 userFilterBuilder,
                 Runnable::run
         );
@@ -232,10 +236,10 @@ class RagRetrievalServiceTest {
 
         String nativeExpression = converter.convertExpression(parser.parse(filterExpression));
 
-        assertEquals(
-                "@user_id:{fb732c63\\-44f7\\-4666\\-b884\\-f6524298afe0}",
-                nativeExpression
-        );
+        // Spring AI 1.1.x RedisFilterExpressionConverter 使用双反斜杠转义连字符
+        String bs = "\\\\"; // 两个反斜杠
+        String expected = "@user_id:{fb732c63" + bs + "\\-" + "44f7" + bs + "\\-" + "4666" + bs + "\\-" + "b884" + bs + "\\-" + "f6524298afe0}";
+        assertEquals(expected, nativeExpression);
     }
 
     private static Document doc(String id, String text, double score) {

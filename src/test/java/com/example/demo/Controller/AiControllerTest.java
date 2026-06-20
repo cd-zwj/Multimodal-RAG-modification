@@ -1,6 +1,7 @@
 package com.example.demo.Controller;
 
 import com.example.demo.Config.DateTimeTools;
+import com.example.demo.model.dto.AgentMode;
 import com.example.demo.model.dto.SessionDeleteRequest;
 import com.example.demo.model.dto.HierarchyHit;
 import com.example.demo.model.dto.MultiTurnChatRequest;
@@ -176,8 +177,35 @@ class AiControllerTest {
         assertTrue(events.get(0).data().contains("\"docTitle\":\"年度报告\""));
         assertTrue(events.get(0).data().contains("\"sectionTitle\":\"财务概览\""));
         assertTrue(events.get(0).data().contains("\"chunkIndex\":3"));
-        assertEquals("message", events.get(1).event());
+        assertEquals("token", events.get(1).event());
         assertEquals("首段", events.get(1).data());
+    }
+
+    @Test
+    void shouldPreserveAgentModeFieldsWhenStreamingMultiTurnChat() {
+        AiService aiService = org.mockito.Mockito.mock(AiService.class);
+        AiController controller = new AiController(aiService, authContextService, asrService);
+        MultiTurnChatRequest request = new MultiTurnChatRequest();
+        request.setUserId("client-user");
+        request.setSessionId("s1");
+        request.setMessage("执行这个计划");
+        request.setModeHint(AgentMode.PLAN_EXECUTE);
+        request.setApprovedPlanId("plan-1");
+
+        when(authContextService.resolveUserId("client-user")).thenReturn("u1");
+        when(aiService.multiTurnChat(org.mockito.ArgumentMatchers.any(MultiTurnChatRequest.class)))
+                .thenReturn(Flux.just(ServerSentEvent.<String>builder().event("done").data("").build()));
+
+        controller.multiTurnChat(request).collectList().block();
+
+        ArgumentCaptor<MultiTurnChatRequest> requestCaptor = ArgumentCaptor.forClass(MultiTurnChatRequest.class);
+        verify(aiService).multiTurnChat(requestCaptor.capture());
+        MultiTurnChatRequest captured = requestCaptor.getValue();
+        assertEquals("u1", captured.getUserId());
+        assertEquals("s1", captured.getSessionId());
+        assertEquals("执行这个计划", captured.getMessage());
+        assertEquals(AgentMode.PLAN_EXECUTE, captured.getModeHint());
+        assertEquals("plan-1", captured.getApprovedPlanId());
     }
 
     @SuppressWarnings("unchecked")

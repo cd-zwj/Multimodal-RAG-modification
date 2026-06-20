@@ -80,6 +80,35 @@
               ]"
             >
               <div class="markdown-content" v-html="formatMessageContent(msg.content, msg.role, index)"></div>
+              <div
+                v-if="msg.plan && msg.plan.status === 'WAITING_APPROVAL'"
+                class="mt-md pt-sm border-t border-outline-variant flex flex-wrap gap-xs"
+              >
+                <button
+                  @click="confirmPlan(msg.plan, index)"
+                  :disabled="streaming"
+                  class="inline-flex items-center gap-xs bg-primary-container text-on-primary px-3 py-1.5 rounded-md font-label-md text-label-md hover:opacity-90 disabled:opacity-50"
+                >
+                  <span class="material-symbols-outlined text-[16px]">play_arrow</span>
+                  确认执行
+                </button>
+                <button
+                  @click="cancelPlan(index)"
+                  :disabled="streaming"
+                  class="inline-flex items-center gap-xs bg-surface-container text-on-surface-variant px-3 py-1.5 rounded-md font-label-md text-label-md hover:bg-surface-container-high disabled:opacity-50"
+                >
+                  <span class="material-symbols-outlined text-[16px]">close</span>
+                  取消
+                </button>
+                <button
+                  @click="revisePlan(msg.plan, index)"
+                  :disabled="streaming"
+                  class="inline-flex items-center gap-xs bg-surface-container text-primary px-3 py-1.5 rounded-md font-label-md text-label-md hover:bg-surface-container-high disabled:opacity-50"
+                >
+                  <span class="material-symbols-outlined text-[16px]">edit</span>
+                  修改需求
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -115,10 +144,25 @@
             ></textarea>
             <div class="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between mt-2 px-2 pb-1">
               <div class="flex items-center gap-sm min-w-0">
-                <!-- Mode Selection (Optional UI enhancement) -->
-                <span class="font-label-md text-label-md text-outline bg-surface-container px-2 py-1 rounded-md flex items-center gap-xs max-w-full">
-                  <span class="material-symbols-outlined text-[14px] flex-shrink-0">source</span>
-                  <span class="truncate">混合检索召唤 Rerank 激活</span>
+                <div class="inline-flex items-center bg-surface-container rounded-md p-0.5 border border-outline-variant">
+                  <button
+                    v-for="option in agentModeOptions"
+                    :key="option.value"
+                    type="button"
+                    @click="selectedAgentMode = option.value"
+                    class="px-2.5 py-1 rounded font-label-md text-label-md transition-colors"
+                    :class="selectedAgentMode === option.value ? 'bg-surface-container-lowest text-primary shadow-sm' : 'text-outline hover:text-on-surface-variant'"
+                    :title="option.title"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+                <span
+                  v-if="lastRouteDecision"
+                  class="font-label-md text-label-md text-outline bg-surface-container px-2 py-1 rounded-md flex items-center gap-xs max-w-full"
+                >
+                  <span class="material-symbols-outlined text-[14px] flex-shrink-0">route</span>
+                  <span class="truncate">{{ formatRouteDecision(lastRouteDecision) }}</span>
                 </span>
               </div>
               <div class="flex items-center gap-xs self-end sm:self-auto">
@@ -266,7 +310,15 @@ const messageContainer = ref(null)
 const hasNewTurns = ref(false)
 const knowledgeBanner = ref(null)
 const documentStatusMap = ref(new Map())
+const selectedAgentMode = ref('AUTO')
+const lastRouteDecision = ref(null)
 let knowledgePollTimer = null
+
+const agentModeOptions = [
+  { value: 'AUTO', label: '自动', title: '由路由模型判断使用哪种 agent 模式' },
+  { value: 'REACT', label: 'ReAct', title: '直接使用当前多轮 RAG 对话模式' },
+  { value: 'PLAN_EXECUTE', label: 'Plan + 执行', title: '先生成计划，确认后再执行' }
+]
 
 const recording = ref(false)
 let audioContext = null
@@ -483,6 +535,7 @@ const initiateNewSession = async () => {
       currentSessionId.value = newSession
       chatMessages.value = []
       citationsList.value = []
+      lastRouteDecision.value = null
     }
   } catch (err) {
     console.error('创建新会话失败:', err)
@@ -501,6 +554,7 @@ const selectSession = async (sessionId) => {
   currentSessionId.value = sessionId
   chatMessages.value = []
   citationsList.value = []
+  lastRouteDecision.value = null
   hasNewTurns.value = false
   try {
     const res = await ai.getHistory(sessionId)
@@ -548,9 +602,16 @@ const sendMessage = async () => {
 
   streaming.value = true
   
-  // Create placeholder message for AI stream response
   const aiMessageIndex = chatMessages.value.push({ role: 'ai', content: '' }) - 1
 
+  await streamChatResponse({
+    userQuery,
+    aiMessageIndex,
+    approvedPlanId: null
+  })
+}
+
+const streamChatResponse = async ({ userQuery, aiMessageIndex, approvedPlanId }) => {
   try {
     const baseURL = import.meta.env.VITE_API_BASE_URL || ''
     const response = await fetch(`${baseURL}/ai/multi-turn/chat`, {
@@ -563,7 +624,9 @@ const sendMessage = async () => {
         userId: authStore.userId,
         sessionId: currentSessionId.value,
         turnCount: chatMessages.value.length - 1,
-        message: userQuery
+        message: userQuery,
+        modeHint: selectedAgentMode.value,
+        approvedPlanId
       })
     })
 
@@ -605,6 +668,38 @@ const sendMessage = async () => {
     streaming.value = false
     scrollToBottom()
   }
+}
+
+const confirmPlan = async (plan, messageIndex) => {
+  if (!plan?.planId || streaming.value) return
+  chatMessages.value[messageIndex].plan = {
+    ...plan,
+    status: 'APPROVED'
+  }
+  chatMessages.value[messageIndex].content += '\n\n已确认，开始执行。'
+  streaming.value = true
+  const aiMessageIndex = chatMessages.value.push({ role: 'ai', content: '' }) - 1
+  await streamChatResponse({
+    userQuery: plan.message || '执行已确认的计划',
+    aiMessageIndex,
+    approvedPlanId: plan.planId
+  })
+}
+
+const cancelPlan = (messageIndex) => {
+  const current = chatMessages.value[messageIndex]
+  if (!current?.plan) return
+  current.plan = {
+    ...current.plan,
+    status: 'CANCELLED'
+  }
+  current.content += '\n\n已取消执行。'
+}
+
+const revisePlan = (plan, messageIndex) => {
+  cancelPlan(messageIndex)
+  inputMessage.value = plan?.message ? `${plan.message}\n\n请按以下修改重新规划：` : '请重新规划：'
+  scrollToBottom()
 }
 
 const clearCitations = () => {
@@ -652,9 +747,46 @@ const handleSseMessage = (message, aiMessageIndex) => {
     return
   }
 
-  if (parsed.eventType === 'message') {
-    chatMessages.value[aiMessageIndex].content += parsed.dataContent
+  if (parsed.eventType === 'route_decision') {
+    try {
+      lastRouteDecision.value = parsed.dataContent ? JSON.parse(parsed.dataContent) : null
+    } catch (e) {
+      console.error('解析路由决策失败:', e)
+    }
+    return
   }
+
+  if (parsed.eventType === 'plan_required') {
+    try {
+      const plan = parsed.dataContent ? JSON.parse(parsed.dataContent) : null
+      if (plan) {
+        chatMessages.value[aiMessageIndex].content = `## 执行计划\n\n${plan.planText || ''}`
+        chatMessages.value[aiMessageIndex].plan = plan
+      }
+    } catch (e) {
+      console.error('解析计划失败:', e)
+      chatMessages.value[aiMessageIndex].content = '计划生成失败，请稍后重试。'
+    }
+    return
+  }
+
+  if (parsed.eventType === 'token' || parsed.eventType === 'message') {
+    chatMessages.value[aiMessageIndex].content += parsed.dataContent
+    return
+  }
+
+  if (parsed.eventType === 'error') {
+    chatMessages.value[aiMessageIndex].content += parsed.dataContent || 'AI 服务暂时不可用，请稍后重试。'
+  }
+}
+
+const formatRouteDecision = (decision) => {
+  const labels = {
+    AUTO: '自动',
+    REACT: 'ReAct',
+    PLAN_EXECUTE: 'Plan + 执行'
+  }
+  return `${labels[decision.mode] || decision.mode} · ${decision.reason || '已路由'}`
 }
 
 const formatCitationPath = (cite) => {

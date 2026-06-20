@@ -1,6 +1,6 @@
 package com.example.demo.Config;
 
-import com.alibaba.cloud.ai.memory.redis.RedisChatMemoryRepository;
+import com.alibaba.cloud.ai.memory.redis.JedisRedisChatMemoryRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,8 +25,8 @@ public class RedisMessage {
      * 使用 RedisBuilder 的 host/port/password API（spring-ai-alibaba 1.0.0.2）
      */
     @Bean
-    public RedisChatMemoryRepository redisChatMemoryRepository() {
-        RedisChatMemoryRepository.RedisBuilder builder = RedisChatMemoryRepository.builder()
+    public JedisRedisChatMemoryRepository redisChatMemoryRepository() {
+        JedisRedisChatMemoryRepository.RedisBuilder builder = JedisRedisChatMemoryRepository.builder()
                 .host(redisHost)
                 .port(redisPort)
                 .timeout((int) redisTimeout.toMillis());

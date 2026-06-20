@@ -23,9 +23,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-vue': ['vue', 'vue-router', 'pinia'],
-          'vendor-markdown': ['markdown-it', 'dompurify']
+        manualChunks(id) {
+          if (id.includes('node_modules/vue') || id.includes('node_modules/vue-router') || id.includes('node_modules/pinia')) {
+            return 'vendor-vue'
+          }
+          if (id.includes('node_modules/markdown-it') || id.includes('node_modules/dompurify')) {
+            return 'vendor-markdown'
+          }
         }
       }
     }

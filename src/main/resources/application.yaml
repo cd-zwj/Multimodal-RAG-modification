@@ -1,4 +1,5 @@
 server:
+  shutdown: graceful
   servlet:
     encoding:
       enabled: true
@@ -7,9 +8,16 @@ server:
 spring:
   application:
     name: demo
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    serialization:
+      write-dates-as-timestamps: false
   flyway:
     enabled: true
     baseline-on-migrate: true
+    repair-on-migrate: true
   ai:
     mcp:
       client:
@@ -21,9 +29,9 @@ spring:
           baidu-mcp:
             url: https://mcp.map.baidu.com/sse
             headers:
-              ak: ${BAIDU_MAP_AK:your-baidu-map-ak}
+              ak: YOUR_BAIDU_MAP_AK
     dashscope:
-      api-key: ${DASHSCOPE_API_KEY:your-dashscope-api-key}
+      api-key: YOUR_DASHSCOPE_API_KEY
       connect-timeout-ms: 10000
       read-timeout-ms: 60000
       chat:
@@ -34,10 +42,11 @@ spring:
           model: text-embedding-v3
     vectorstore:
       redis:
-        initialize-schema: true
+        initialize-schema: false
         index-name: atguigu-index
         prefix: atguigu-prefix
-        # 璁剧疆鍚戦噺鏁版嵁姘镐笉杩囨湡锛? 琛ㄧず涓嶈繃鏈燂級
+        summary-index-name: atguigu-summary-index
+        summary-prefix: atguigu-summary-prefix
         ttl-seconds: 0
   servlet:
     multipart:
@@ -46,18 +55,22 @@ spring:
   datasource:
     url: jdbc:mysql://39.108.175.183:3306/rag_knowledge?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
-    password: nm561234789
+    password: YOUR_DB_PASSWORD
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      max-lifetime: 600000       # 10 minutes
+      maximum-pool-size: 30
+      minimum-idle: 5
+      leak-detection-threshold: 10000
+      max-lifetime: 600000
       connection-timeout: 30000
       validation-timeout: 5000
       keepalive-time: 30000
   data:
     redis:
+      client-type: jedis          # Spring Boot 3.5+ 需要显式指定，否则不会自动配置 JedisConnectionFactory
       host: 120.24.238.51
       port: 6379
-      password: nm561234789 # 璇锋浛鎹负鎮ㄥ湪鏈嶅姟鍣ㄤ笂璁剧疆鐨勫己瀵嗙爜
+      password: YOUR_REDIS_PASSWORD
       database: 0
       timeout: 60000ms
       connect-timeout: 30000ms
@@ -73,22 +86,17 @@ spring:
     host: 120.24.238.51
     port: 5672
     username: rabbitmq
-    password: nm561234789
+    password: YOUR_RABBITMQ_PASSWORD
     virtual-host: /
-    connection-timeout: 30000  # 杩炴帴瓒呮椂 30 绉?
+    connection-timeout: 30000
     listener:
       simple:
-        # 娑堣垂鑰呭苟鍙戞暟锛堟牴鎹湇鍔″櫒鎬ц兘璋冩暣锛?
         concurrency: 3
         max-concurrency: 10
-        # 鎵嬪姩纭妯″紡锛岄槻姝㈡秷鎭涪澶?
         acknowledge-mode: manual
-        # 棰勫彇鏁伴噺锛堟瘡娆′粠闃熷垪鎷夊彇鐨勬秷鎭暟锛?
         prefetch: 1
-        # 娑堣垂鑰呰秴鏃舵椂闂达紙榛樿30鍒嗛挓澶煭锛屾敼涓?灏忔椂锛?
         idle-event-interval: 7200000
     template:
-      # 鍙戦€佹秷鎭け璐ユ椂鐨勯噸璇曟満鍒?
       retry:
         enabled: true
         initial-interval: 1000
@@ -97,13 +105,12 @@ spring:
 minio:
   endpoint: http://39.108.175.183:9000
   access-key: minioadmin
-  secret-key: nm561234789
+  secret-key: YOUR_MINIO_SECRET_KEY
   bucket: rag-knowledge
 
-# 鏂囦欢涓婁紶閰嶇疆
 file:
   upload:
-    temp-dir: ./temp/chunks  # 鍒嗙墖涓存椂瀛樺偍鐩綍
+    temp-dir: ./temp/chunks
 
 aliyun:
   asr:
@@ -111,75 +118,55 @@ aliyun:
     access-key-secret: ${ALIYUN_ASR_ACCESS_KEY_SECRET:your-aliyun-asr-access-key-secret}
     app-key: ${ALIYUN_ASR_APP_KEY:your-aliyun-asr-app-key}
 
+asr:
+  provider-order:
+    - aliyun-nls
+    - dashscope-paraformer
+  dashscope:
+    enabled: true
+    api-key: YOUR_DASHSCOPE_API_KEY
+    model: paraformer-realtime-v2
+    format: pcm
+    sample-rate: 16000
 
 video:
   segment-duration: 30
   keyframe-interval: 5
 
 chunking:
-  # 鏃х殑鍥哄畾鍒囧壊閰嶇疆锛堝凡搴熷純锛屼繚鐣欑敤浜庡弬鑰冿級
   fixed:
     chunk-size: 1000
     overlap: 200
-
-  # 鏂扮殑 Token 鍒囧壊閰嶇疆锛堟帹鑽愪娇鐢級
   token:
-    # 榛樿姣忎釜鍒嗗潡鐨?token 鏁伴噺锛?00 tokens 鈮?3200 瀛楃锛岄€傚悎澶у鏁?AI 妯″瀷锛?
     default-chunk-size: 800
-    # PPT 涓撶敤鐨?chunk size锛堝彲浠ヨ缃洿澶э紝鍥犱负 PPT 鍐呭缁撴瀯鍖栵級
     ppt-chunk-size: 1000
-    # 鏈€灏忓垎鍧楀瓧绗︽暟锛堥伩鍏嶅垎鍧楄繃灏忥級
     min-chunk-size-chars: 350
-    # 鏈€灏忓祵鍏ラ暱搴︼紙鐭簬姝ら暱搴︾殑鏂囨湰涓嶄細琚祵鍏ワ級
     min-chunk-length-to-embed: 5
-    # 鏈€澶у垎鍧楁暟閲忥紙闃叉鏂囨。杩囧ぇ瀵艰嚧鍐呭瓨闂锛?
     max-num-chunks: 10000
-    # 鏄惁淇濈暀鍒嗛殧绗︼紙娈佃惤銆佸彞瀛愯竟鐣岀瓑锛?
     keep-separator: true
 
-# 鑱婂ぉ璁板繂閰嶇疆
 chat:
   memory:
-    # 浼犵粰妯″瀷鐨勬渶杩戞秷鎭獥鍙ｅぇ灏忥紙鏉★級
     max-messages: 10
-    # 鎬绘秷鎭秴杩囨闃堝€兼椂瑙﹀彂鎽樿锛堝繀椤诲ぇ浜?max-messages锛?
     summarize-threshold: 12
-    # 鍔╂墜鍥炲鎴柇闀垮害锛堟憳瑕佹椂鑺傜渷 Token锛?
     assistant-truncate-length: 300
-    # 鎽樿鏈€澶у瓧鏁伴檺鍒?
     summary-max-length: 500
 
-# RAG 妫€绱㈤厤缃?
 rag:
   retrieval:
-    # 绮楀彫鍥炲€欓€夋暟閲忥紙鍚戦噺妫€绱㈤樁娈碉紝Rerank 鍓嶏級
-    # 鍊艰秺澶у彫鍥炶秺鍏ㄩ潰锛屼絾 Rerank 鑰楁椂涔熻秺闀?
     candidate-top-k: 15
-    # 鍚戦噺鐩镐技搴︽渶浣庨槇鍊硷紙浣庝簬姝ゅ垎鏁扮殑缁撴灉鐩存帴涓㈠純锛?
-    # 璁句綆涓€浜涜 Rerank 鏈夋洿澶氬€欓€夋潵绮炬帓
     similarity-threshold: 0.3
-    # Rerank 鍚庢渶缁堣繑鍥炵殑鏂囨。鏁伴噺
     final-top-k: 5
-    # 鍒ゅ畾"鍛戒腑鐭ヨ瘑搴?鐨勬渶浣?Rerank 鍒嗘暟
-    # 浣庝簬姝ゅ垎鏁拌涓烘湭鍛戒腑锛岃蛋绾€氱敤闂瓟
     hit-score-threshold: 0.35
   rerank:
-    # Rerank 妯″瀷鍚嶇О锛圖ashScope 鎻愪緵锛?
     model: gte-rerank-v2
 
-# Sa-Token 閰嶇疆
 sa-token:
-  # token 鍚嶇О锛堝墠绔€氳繃 header satoken 浼犻€掞級
   token-name: satoken
-  # token 鏈夋晥鏈燂紙绉掞級锛岄粯璁?0澶?
   timeout: 2592000
-  # token 鏈€浣庢椿璺冮鐜囷紙绉掞級锛岃秴杩囨鏃堕棿鏃犳搷浣滃垯 token 杩囨湡锛?1 琛ㄧず涓嶉檺
   active-timeout: -1
-  # 鏄惁鍏佽鍚屼竴璐﹀彿澶氬湴鍚屾椂鐧诲綍
   is-concurrent: true
-  # 鍦ㄥ浜虹櫥褰曞悓涓€璐﹀彿鏃讹紝鏄惁鍏辩敤涓€涓?token
   is-share: false
-  # token 椋庢牸
   token-style: uuid
 
 auth:
@@ -198,7 +185,7 @@ app:
     fallback-dir: ./temp/emails
 
 mineru:
-  api-key: ${MINERU_API_KEY:your-mineru-api-key}
+  api-key: YOUR_MINERU_API_KEY
   model-version: vlm
 
 resilience4j:
@@ -228,13 +215,15 @@ resilience4j:
         timeout-duration: 60s
         cancel-running-future: false
 
-
-
-# Actuator health checks
+# S-2: Actuator security - restrict to health & info, hide details unless authorized
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
   endpoint:
     health:
-      show-details: always
+      show-details: when_authorized
   health:
     db:
       enabled: true
@@ -242,3 +231,4 @@ management:
       enabled: true
     rabbit:
       enabled: true
+

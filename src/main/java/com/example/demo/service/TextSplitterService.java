@@ -73,7 +73,8 @@ public class TextSplitterService {
                     minChunkSizeChars,
                     minChunkLengthToEmbed,
                     maxNumChunks,
-                    keepSeparator
+                    keepSeparator,
+                    List.of()  // 使用默认标点符号
             );
 
             // Spring AI 的 TokenTextSplitter 需要 Document 对象

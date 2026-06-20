@@ -62,13 +62,29 @@ public class FileProcessConsumer {
                     task.getMinioUrl()
             );
 
-            // 异步主链路在这里把“叶子切片”提升为完整摘要树。
+            // 异步主链路在这里把"叶子切片"提升为完整摘要树。
             List<RagUnit> allUnits = hierarchicalIndexingService.buildHierarchy(
                     task.getSourceId(),
                     task.getFilename(),
                     leafUnits
             );
 
+            // 填充元数据字段（user_id / source_id 等 NOT NULL 字段必须在 saveBatch 前填充）
+            for (RagUnit unit : allUnits) {
+                unit.setSourceId(task.getSourceId());
+                unit.setFileHash(task.getFileHash());
+                unit.setUserId(task.getUserId());
+                unit.setFilename(task.getFilename());
+                unit.setMinioPath(task.getMinioPath());
+                unit.setMinioUrl(task.getMinioUrl());
+            }
+
+            // 批量写入 MySQL（独立于事务，因为 saveBatch 使用 ExecutorType.BATCH 与 TransactionTemplate 冲突）
+            if (!allUnits.isEmpty()) {
+                ragUnitService.saveBatch(allUnits);
+            }
+
+            // 事务内只保留状态更新 + 向量写入
             ensureFileActive(task.getUserId(), task.getFileHash());
             saveDataWithTransaction(allUnits, task);
 
@@ -117,19 +133,6 @@ public class FileProcessConsumer {
         transactionTemplate.executeWithoutResult(status -> {
             try {
                 ensureFileActive(task.getUserId(), task.getFileHash());
-
-                for (RagUnit unit : units) {
-                    unit.setSourceId(task.getSourceId());
-                    unit.setFileHash(task.getFileHash());
-                    unit.setUserId(task.getUserId());
-                    unit.setFilename(task.getFilename());
-                    unit.setMinioPath(task.getMinioPath());
-                    unit.setMinioUrl(task.getMinioUrl());
-                }
-
-                if (!units.isEmpty()) {
-                    ragUnitService.saveBatch(units);
-                }
 
                 int leafCount = hierarchicalIndexingService.countLeafNodes(units);
 

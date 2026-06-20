@@ -15,4 +15,6 @@ public class MultiTurnChatRequest {
     private String sessionId;
     private Integer turnCount;
     private String message;
+    private AgentMode modeHint = AgentMode.AUTO;
+    private String approvedPlanId;
 }

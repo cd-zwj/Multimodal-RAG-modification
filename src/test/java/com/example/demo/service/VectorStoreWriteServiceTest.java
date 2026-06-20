@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.vectorstore.VectorStore;
+import redis.clients.jedis.JedisPooled;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,13 +36,13 @@ class VectorStoreWriteServiceTest {
     private VectorStore summaryVectorStore;
 
     @Mock
-    private RagUnitService ragUnitService;
+    private JedisPooled jedisPooled;
 
     private VectorStoreWriteService vectorStoreWriteService;
 
     @BeforeEach
     void setUp() {
-        vectorStoreWriteService = new VectorStoreWriteService(leafVectorStore, summaryVectorStore, ragUnitService);
+        vectorStoreWriteService = new VectorStoreWriteService(leafVectorStore, summaryVectorStore, jedisPooled, "leaf-index", "summary-index");
     }
 
     @Test
@@ -50,9 +51,6 @@ class VectorStoreWriteServiceTest {
         for (int i = 0; i < 3; i++) {
             units.add(leafUnit("leaf-" + i));
         }
-
-        when(ragUnitService.buildVectorMetadata(any(RagUnit.class), any(String.class)))
-                .thenReturn(Map.of("user_id", "u1"));
 
         doThrow(new RuntimeException("batch failed"))
                 .when(leafVectorStore)
@@ -73,9 +71,6 @@ class VectorStoreWriteServiceTest {
     void shouldRouteLeafAndSummaryToDifferentStores() {
         RagUnit leaf = leafUnit("leaf-1");
         RagUnit summary = summaryUnit("summary-1");
-
-        when(ragUnitService.buildVectorMetadata(any(RagUnit.class), any(String.class)))
-                .thenReturn(Map.of("user_id", "u1"));
 
         vectorStoreWriteService.addUnitsToVectorStores(List.of(leaf, summary), "test.docx");
 

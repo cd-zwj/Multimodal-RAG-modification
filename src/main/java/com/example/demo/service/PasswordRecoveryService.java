@@ -33,7 +33,7 @@ public class PasswordRecoveryService {
     private final StringRedisTemplate stringRedisTemplate;
     private final AuthAccountService authAccountService;
     private final EmailService emailService;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final BCryptPasswordEncoder passwordEncoder;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Value("${auth.password-recovery.reset-code-ttl-seconds:600}")
@@ -47,10 +47,12 @@ public class PasswordRecoveryService {
 
     public PasswordRecoveryService(StringRedisTemplate stringRedisTemplate,
                                    AuthAccountService authAccountService,
-                                   EmailService emailService) {
+                                   EmailService emailService,
+                                   BCryptPasswordEncoder passwordEncoder) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.authAccountService = authAccountService;
         this.emailService = emailService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public PasswordResetCodeResponse createResetCode(String username) {

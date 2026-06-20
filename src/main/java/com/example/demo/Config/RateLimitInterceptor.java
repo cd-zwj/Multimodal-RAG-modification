@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -22,19 +23,12 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-
-    /** 每个窗口最大请求数 */
     private final int maxRequests;
-
-    /** 窗口时长（秒） */
     private final int windowSeconds;
 
-    public RateLimitInterceptor(StringRedisTemplate redisTemplate, ObjectMapper objectMapper) {
-        this(redisTemplate, objectMapper, 10, 60);
-    }
-
     public RateLimitInterceptor(StringRedisTemplate redisTemplate, ObjectMapper objectMapper,
-                                int maxRequests, int windowSeconds) {
+                                @Value("${rate-limit.max-requests:10}") int maxRequests,
+                                @Value("${rate-limit.window-seconds:60}") int windowSeconds) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.maxRequests = maxRequests;

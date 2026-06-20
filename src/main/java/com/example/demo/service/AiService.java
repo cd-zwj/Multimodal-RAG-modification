@@ -10,21 +10,19 @@ import com.example.demo.model.dto.SessionDeleteRequest;
 import com.example.demo.model.dto.SessionDeleteResponse;
 import com.example.demo.model.dto.SessionListRequest;
 import com.example.demo.model.dto.SessionListResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import com.example.demo.model.dto.HierarchyHit;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.demo.service.agent.AgentOrchestrator;
+import com.example.demo.service.agent.ReactAgentExecutor;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 
@@ -32,18 +30,56 @@ import static org.springframework.ai.chat.memory.ChatMemory.CONVERSATION_ID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AiService {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ChatClient deepchatClient;
     private final RagRetrievalService ragRetrievalService;
-    private final QueryRewriteService queryRewriteService;
-    private final RetrievalSubQueryService retrievalSubQueryService;
     private final UserProfileService userProfileService;
     private final DateTimeTools dateTimeTools;
     private final ChatSessionService chatSessionService;
+    private final AgentOrchestrator agentOrchestrator;
+    private final ReactAgentExecutor legacyReactAgentExecutor;
+
+    @Autowired
+    public AiService(ChatClient deepchatClient,
+                     RagRetrievalService ragRetrievalService,
+                     QueryRewriteService queryRewriteService,
+                     RetrievalSubQueryService retrievalSubQueryService,
+                     UserProfileService userProfileService,
+                     DateTimeTools dateTimeTools,
+                     ChatSessionService chatSessionService,
+                     AgentOrchestrator agentOrchestrator) {
+        this.deepchatClient = deepchatClient;
+        this.ragRetrievalService = ragRetrievalService;
+        this.userProfileService = userProfileService;
+        this.dateTimeTools = dateTimeTools;
+        this.chatSessionService = chatSessionService;
+        this.agentOrchestrator = agentOrchestrator;
+        this.legacyReactAgentExecutor = null;
+    }
+
+    public AiService(ChatClient deepchatClient,
+                     RagRetrievalService ragRetrievalService,
+                     QueryRewriteService queryRewriteService,
+                     RetrievalSubQueryService retrievalSubQueryService,
+                     UserProfileService userProfileService,
+                     DateTimeTools dateTimeTools,
+                     ChatSessionService chatSessionService) {
+        this.deepchatClient = deepchatClient;
+        this.ragRetrievalService = ragRetrievalService;
+        this.userProfileService = userProfileService;
+        this.dateTimeTools = dateTimeTools;
+        this.chatSessionService = chatSessionService;
+        this.agentOrchestrator = null;
+        this.legacyReactAgentExecutor = new ReactAgentExecutor(
+                deepchatClient,
+                ragRetrievalService,
+                queryRewriteService,
+                retrievalSubQueryService,
+                userProfileService,
+                dateTimeTools
+        );
+    }
 
     // ────── 委托给 ChatSessionService 的会话方法 ──────
 
@@ -92,83 +128,14 @@ public class AiService {
     }
 
     public Flux<ServerSentEvent<String>> multiTurnChat(MultiTurnChatRequest request) {
+        if (agentOrchestrator != null) {
+            return agentOrchestrator.chat(request);
+        }
         String userId = chatSessionService.requireActiveSessionUser(request.getSessionId());
         if (request.getUserId() != null && !request.getUserId().equals(userId)) {
             throw new IllegalArgumentException("会话用户与当前登录用户不一致");
         }
-        String originalQuery = request.getMessage();
-        String rewrittenQuery = queryRewriteService.rewrite(request.getSessionId(), originalQuery);
-        log.info("多轮对话检索 - 原始查询: '{}', 改写后: '{}'", originalQuery, rewrittenQuery);
-
-        List<String> retrievalQueries = retrievalSubQueryService.generateSubQueries(rewrittenQuery, originalQuery);
-        RetrievalResult result = ragRetrievalService.retrieveWithMultiPathRecall(
-                rewrittenQuery,
-                retrievalQueries,
-                userId
-        );
-
-        String systemPrompt = buildMultiTurnSystemPrompt(userId, result);
-
-        // 1. 组装引文 JSON
-        List<Map<String, Object>> citations = new ArrayList<>();
-        if (result.getHierarchyHits() != null) {
-            for (int i = 0; i < result.getHierarchyHits().size(); i++) {
-                HierarchyHit hit = result.getHierarchyHits().get(i);
-                Map<String, Object> cite = new HashMap<>();
-                cite.put("sourceName", hit.getFilename() != null ? hit.getFilename() : "");
-                cite.put("minioUrl", hit.getMinioUrl() != null ? hit.getMinioUrl() : "");
-                cite.put("docTitle", hit.getDocTitle() != null ? hit.getDocTitle() : "");
-                cite.put("sectionTitle", hit.getSectionTitle() != null ? hit.getSectionTitle() : "");
-                cite.put("chunkIndex", hit.getLeafChunkIndex() != null ? hit.getLeafChunkIndex() + 1 : null);
-                
-                String label;
-                if (hit.getSectionTitle() != null && !hit.getSectionTitle().isBlank()) {
-                    label = hit.getSectionTitle();
-                } else if (hit.getLeafChunkIndex() != null) {
-                    label = "分段 " + (hit.getLeafChunkIndex() + 1);
-                } else {
-                    label = "段落 " + (i + 1);
-                }
-                cite.put("label", label);
-                cite.put("text", hit.getContent() != null ? hit.getContent() : "");
-                
-                double scoreDouble = hit.getLeafScore() != null ? hit.getLeafScore() : 0.0;
-                int scorePercent = (int) Math.round(scoreDouble * 100);
-                cite.put("score", scorePercent);
-                
-                citations.add(cite);
-            }
-        }
-
-        String citationsJson;
-        try {
-            citationsJson = MAPPER.writeValueAsString(citations);
-        } catch (Exception e) {
-            log.error("序列化引文失败", e);
-            citationsJson = "[]";
-        }
-
-        // 2. 发送引文事件，紧接着推送大模型文本 Token
-        ServerSentEvent<String> citationsEvent = ServerSentEvent.<String>builder()
-                .event("citations")
-                .data(citationsJson)
-                .build();
-
-        Flux<ServerSentEvent<String>> citationsFlux = Flux.just(citationsEvent);
-
-        Flux<ServerSentEvent<String>> textFlux = deepchatClient.prompt()
-                .advisors(advisorSpec -> advisorSpec.param(CONVERSATION_ID, request.getSessionId()))
-                .tools(dateTimeTools)
-                .system(systemPrompt)
-                .user(originalQuery)
-                .stream()
-                .content()
-                .map(token -> ServerSentEvent.<String>builder()
-                        .event("message")
-                        .data(token)
-                        .build());
-
-        return Flux.concat(citationsFlux, textFlux);
+        return legacyReactAgentExecutor.execute(request, userId);
     }
 
     public Flux<ServerSentEvent<String>> multiTurnChatFallback(MultiTurnChatRequest request, Throwable t) {

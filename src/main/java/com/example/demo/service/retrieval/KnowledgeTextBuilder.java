@@ -2,7 +2,7 @@ package com.example.demo.service.retrieval;
 
 import com.example.demo.model.RagUnit;
 import com.example.demo.repository.RagUnitQueryRepository;
-import com.example.demo.service.RagUnitService;
+import com.example.demo.service.VectorStoreWriteService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Component;
@@ -27,7 +27,7 @@ public class KnowledgeTextBuilder {
     private static final int CONTEXT_NEIGHBOR_AFTER = 2;
 
     private final RagUnitQueryRepository ragUnitQueryRepository;
-    private final RagUnitService ragUnitService;
+    private final VectorStoreWriteService vectorStoreWriteService;
 
     /**
      * 扩展命中的叶子节点上下文（前后各 N 个邻居），并格式化为知识文本。
@@ -76,7 +76,7 @@ public class KnowledgeTextBuilder {
                 continue;
             }
             documents.add(new Document(unit.getId(), unit.getContent(),
-                    ragUnitService.buildVectorMetadata(unit, unit.getFilename())));
+                    vectorStoreWriteService.buildVectorMetadata(unit, unit.getFilename())));
         }
         return documents;
     }

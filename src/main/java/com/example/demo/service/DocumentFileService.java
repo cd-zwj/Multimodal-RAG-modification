@@ -1,6 +1,7 @@
 package com.example.demo.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.example.demo.mapper.DocumentFileMapper;
 import com.example.demo.model.DocumentFile;
 import com.example.demo.model.DocumentFileStatus;
@@ -11,11 +12,13 @@ import com.example.demo.model.dto.PageResponse;
 import com.example.demo.model.dto.RagDocumentInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
 @Slf4j
+@Transactional
 public class DocumentFileService {
 
     private final DocumentFileMapper documentFileMapper;
@@ -24,24 +27,28 @@ public class DocumentFileService {
         this.documentFileMapper = documentFileMapper;
     }
 
+    @Transactional(readOnly = true)
     public DocumentFile getByFileHash(String userId, String fileHash) {
         QueryWrapper<DocumentFile> wrapper = new QueryWrapper<>();
         wrapper.eq("user_id", userId).eq("file_hash", fileHash).last("LIMIT 1");
         return documentFileMapper.selectOne(wrapper);
     }
 
+    @Transactional(readOnly = true)
     public DocumentFile getActiveByFileHash(String userId, String fileHash) {
         QueryWrapper<DocumentFile> wrapper = new QueryWrapper<>();
         wrapper.eq("user_id", userId).eq("file_hash", fileHash).eq("deleted", 0).last("LIMIT 1");
         return documentFileMapper.selectOne(wrapper);
     }
 
+    @Transactional(readOnly = true)
     public DocumentFile getActiveByFilename(String userId, String filename) {
         QueryWrapper<DocumentFile> wrapper = new QueryWrapper<>();
         wrapper.eq("user_id", userId).eq("filename", filename).eq("deleted", 0).last("LIMIT 1");
         return documentFileMapper.selectOne(wrapper);
     }
 
+    @Transactional(readOnly = true)
     public List<DocumentFile> getAllActiveDocuments(String userId) {
         return documentFileMapper.selectAllActive(userId);
     }
@@ -93,18 +100,18 @@ public class DocumentFileService {
     }
 
     public void updateStatus(String userId, String fileHash, DocumentFileStatus status, Integer chunkCount, String errorMessage) {
-        DocumentFile documentFile = requireByFileHash(userId, fileHash);
-        documentFile.setStatus(status);
+        UpdateWrapper<DocumentFile> wrapper = new UpdateWrapper<>();
+        wrapper.eq("user_id", userId).eq("file_hash", fileHash).set("status", status);
         if (chunkCount != null) {
-            documentFile.setChunkCount(chunkCount);
+            wrapper.set("chunk_count", chunkCount);
         }
         if (status != DocumentFileStatus.FAILED) {
-            documentFile.setErrorMessage(null);
+            wrapper.set("error_message", null);
         }
         if (errorMessage != null) {
-            documentFile.setErrorMessage(errorMessage);
+            wrapper.set("error_message", errorMessage);
         }
-        documentFileMapper.updateById(documentFile);
+        documentFileMapper.update(null, wrapper);
     }
 
     public void markFailed(String userId, String fileHash, String errorMessage) {
@@ -138,11 +145,13 @@ public class DocumentFileService {
         }
     }
 
+    @Transactional(readOnly = true)
     public boolean isActive(String userId, String fileHash) {
         DocumentFile documentFile = getByFileHash(userId, fileHash);
         return documentFile != null && !Boolean.TRUE.equals(documentFile.getDeleted());
     }
 
+    @Transactional(readOnly = true)
     public DocumentFileStatusResponse getDocumentStatus(String userId, String fileHash) {
         DocumentFile documentFile = getActiveByFileHash(userId, fileHash);
         if (documentFile == null) {
@@ -151,6 +160,7 @@ public class DocumentFileService {
         return DocumentFileStatusResponse.from(documentFile);
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<RagDocumentInfo> getDocumentsPage(PageRequest request) {
         Long total = documentFileMapper.countDocuments(request.getSourceType(), request.getUserId(), request.getKeyword());
         return PageResponse.of(

@@ -21,7 +21,6 @@ public class SaTokenConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 速率限制（登录、注册、密码重置请求）
         registry.addInterceptor(rateLimitInterceptor)
                 .addPathPatterns("/auth/login", "/auth/register", "/auth/password/forgot/request");
 
@@ -38,7 +37,6 @@ public class SaTokenConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/auth/login",
                         "/auth/register",
-                        "/actuator/**",
                         "/error",
                         "/",
                         "/index.html",

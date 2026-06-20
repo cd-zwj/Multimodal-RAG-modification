@@ -26,16 +26,18 @@ public class AuthAccountService {
     private final AuthRoleMapper authRoleMapper;
     private final AuthUserRoleMapper authUserRoleMapper;
     private final AuthPermissionService authPermissionService;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final BCryptPasswordEncoder passwordEncoder;
 
     public AuthAccountService(AuthUserMapper authUserMapper,
                               AuthRoleMapper authRoleMapper,
                               AuthUserRoleMapper authUserRoleMapper,
-                              AuthPermissionService authPermissionService) {
+                              AuthPermissionService authPermissionService,
+                              BCryptPasswordEncoder passwordEncoder) {
         this.authUserMapper = authUserMapper;
         this.authRoleMapper = authRoleMapper;
         this.authUserRoleMapper = authUserRoleMapper;
         this.authPermissionService = authPermissionService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Transactional

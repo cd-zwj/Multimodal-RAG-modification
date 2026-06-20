@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.session.ExecutorType;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
+import org.mybatis.spring.SqlSessionUtils;
 import org.apache.tika.Tika;
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
@@ -53,7 +54,7 @@ public class RagUnitService {
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "application/vnd.ms-excel",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "text/plain", "text/markdown", "text/html", "text/csv",
+            "text/plain", "text/markdown", "text/x-markdown", "text/x-web-markdown", "text/html", "text/csv",
             "application/json", "application/xml", "application/yaml", "application/x-yaml",
             "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp",
             "video/mp4", "video/webm", "video/quicktime",
@@ -97,22 +98,25 @@ public class RagUnitService {
      * 注意：此方法依赖 Spring 托管的事务连接（SpringManagedTransactionFactory），
      * 由 mybatis-plus-spring-boot3-starter 默认配置。
      * 因此在事务模板（如 FileProcessConsumer.saveDataWithTransaction）中调用时，
-     * batch session 会自动参与外层 Spring 事务，失败时可整体回滚。
+     * 使用 SqlSessionUtils 确保 batch session 正确参与 Spring 事务，失败时可整体回滚。
      * createdAt / updatedAt 由 MyBatis-Plus MetaObjectHandler 在 flushStatements 时自动填充。
      */
     public void saveBatch(List<RagUnit> units) {
         if (units == null || units.isEmpty()) {
             return;
         }
-        try (SqlSession batchSession = sqlSessionFactory.openSession(ExecutorType.BATCH)) {
-            RagUnitMapper batchMapper = batchSession.getMapper(RagUnitMapper.class);
+        SqlSession sqlSession = SqlSessionUtils.getSqlSession(sqlSessionFactory, ExecutorType.BATCH, null);
+        try {
+            RagUnitMapper batchMapper = sqlSession.getMapper(RagUnitMapper.class);
             for (int i = 0; i < units.size(); i++) {
                 batchMapper.insert(units.get(i));
                 if ((i + 1) % DB_BATCH_FLUSH_SIZE == 0) {
-                    batchSession.flushStatements();
+                    sqlSession.flushStatements();
                 }
             }
-            batchSession.flushStatements();
+            sqlSession.flushStatements();
+        } finally {
+            SqlSessionUtils.closeSqlSession(sqlSession, sqlSessionFactory);
         }
         log.debug("批量写入 MySQL 完成, 记录数: {}", units.size());
     }
@@ -382,38 +386,6 @@ public class RagUnitService {
         vectorStoreWriteService.addUnitsToVectorStores(units, filename);
     }
 
-    public Map<String, Object> buildVectorMetadata(RagUnit unit, String filename) {
-        Map<String, Object> metadata = new HashMap<>();
-        // 把层级关系一起写进 metadata，便于命中后回溯 source、父节点和树层级。
-        metadata.put("source_id", unit.getSourceId());
-        metadata.put("source_type", unit.getSourceType().name());
-        metadata.put("unit_id", unit.getId());
-        if (unit.getUserId() != null) {
-            metadata.put("user_id", unit.getUserId());
-        }
-        metadata.put("filename", filename);
-        metadata.put("node_type", unit.getNodeType() != null ? unit.getNodeType().name() : RagNodeType.LEAF.name());
-        metadata.put("tree_level", unit.getTreeLevel() != null ? unit.getTreeLevel() : 0);
-        if (unit.getParentId() != null) {
-            metadata.put("parent_id", unit.getParentId());
-        }
-        if (unit.getTitle() != null) {
-            metadata.put("title", unit.getTitle());
-        }
-        if (unit.getChildCount() != null) {
-            metadata.put("child_count", unit.getChildCount());
-        }
-        if (unit.getChunkIndex() != null) {
-            metadata.put("chunk_index", unit.getChunkIndex());
-        }
-        if (unit.getStartTime() != null) {
-            metadata.put("start_time", unit.getStartTime());
-        }
-        if (unit.getEndTime() != null) {
-            metadata.put("end_time", unit.getEndTime());
-        }
-        return metadata;
-    }
 
     private UploadResponse buildUploadResponse(DocumentFile documentFile, String message, boolean success) {
         List<RagUnit> leafUnits = documentFile.getStatus() == DocumentFileStatus.SUCCESS
@@ -498,3 +470,6 @@ public class RagUnitService {
         return SourceType.TEXT;
     }
 }
+
+
+

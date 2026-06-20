@@ -1,6 +1,6 @@
 package com.example.demo.service;
 
-import com.alibaba.cloud.ai.memory.redis.RedisChatMemoryRepository;
+import com.alibaba.cloud.ai.memory.redis.JedisRedisChatMemoryRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -30,7 +30,7 @@ import java.util.List;
 public class UserProfileService {
 
     @Qualifier("redisChatMemoryRepository")
-    private final RedisChatMemoryRepository chatMemoryRepository;
+    private final JedisRedisChatMemoryRepository chatMemoryRepository;
 
     @Qualifier("deepchatClient")
     private final ChatClient chatClient;

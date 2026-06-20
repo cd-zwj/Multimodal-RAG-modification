@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 
+import java.util.concurrent.CompletableFuture;
 import java.io.InputStream;
 import java.util.List;
 
@@ -36,14 +37,14 @@ public class AiController {
 
     @SaCheckPermission("ai:chat")
     @GetMapping(value = "/chatmemory/chat", produces = "text/plain;charset=UTF-8")
-    public String chat(String msg, String userId) {
+    public CompletableFuture<String> chat(String msg, String userId) {
         if (msg == null || msg.isBlank()) {
-            return "请输入问题";
+            return CompletableFuture.completedFuture("请输入问题");
         }
         if (msg.length() > 4000) {
-            return "问题过长，请缩短后重试";
+            return CompletableFuture.completedFuture("问题过长，请缩短后重试");
         }
-        return aiService.chat(msg, authContextService.resolveUserId(userId)).join();
+        return aiService.chat(msg, authContextService.resolveUserId(userId));
     }
 
     /**

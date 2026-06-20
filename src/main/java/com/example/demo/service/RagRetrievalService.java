@@ -24,6 +24,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.regex.Pattern;
 
 /**
  * 检索编排服务，负责策略选择、多路召回和 fallback 控制。
@@ -45,6 +46,7 @@ public class RagRetrievalService {
     private final KnowledgeTextBuilder knowledgeTextBuilder;
     private final RagUnitQueryRepository ragUnitQueryRepository;
     private final RagUnitService ragUnitService;
+    private final VectorStoreWriteService vectorStoreWriteService;
     private final UserFilterBuilder userFilterBuilder;
     private final Executor retrievalTaskExecutor;
 
@@ -67,6 +69,7 @@ public class RagRetrievalService {
                                KnowledgeTextBuilder knowledgeTextBuilder,
                                RagUnitQueryRepository ragUnitQueryRepository,
                                RagUnitService ragUnitService,
+                               VectorStoreWriteService vectorStoreWriteService,
                                UserFilterBuilder userFilterBuilder,
                                @Qualifier("mvcTaskExecutor") Executor retrievalTaskExecutor) {
         this.leafVectorStore = leafVectorStore;
@@ -76,6 +79,7 @@ public class RagRetrievalService {
         this.knowledgeTextBuilder = knowledgeTextBuilder;
         this.ragUnitQueryRepository = ragUnitQueryRepository;
         this.ragUnitService = ragUnitService;
+        this.vectorStoreWriteService = vectorStoreWriteService;
         this.userFilterBuilder = userFilterBuilder;
         this.retrievalTaskExecutor = retrievalTaskExecutor;
     }
@@ -129,7 +133,10 @@ public class RagRetrievalService {
 
             RetrievalResult primaryResult = retrieve(normalizedQueries.get(0), userId, topK, hitThreshold);
             if (normalizedQueries.size() == 1) {
-                return primaryResult;
+                if (primaryResult.isHit() || !primaryResult.getDocuments().isEmpty()) {
+                    return primaryResult;
+                }
+                return fallbackToKeywordRecall(normalizedQueries, userId, topK, hitThreshold, startTime);
             }
 
             List<Document> mergedCandidates = collectHybridCandidates(normalizedQueries, userId);
@@ -187,6 +194,56 @@ public class RagRetrievalService {
             log.error("多路召回过程发生异常, 耗时={}ms", duration, e);
             return RetrievalResult.empty(duration);
         }
+    }
+
+    private RetrievalResult fallbackToKeywordRecall(List<String> queries,
+                                                    String userId,
+                                                    int topK,
+                                                    double hitThreshold,
+                                                    long startTime) {
+        List<Document> keywordCandidates = collectKeywordCandidates(queries, userId);
+        if (keywordCandidates.isEmpty()) {
+            long duration = System.currentTimeMillis() - startTime;
+            log.info("单路召回未召回任何候选文档，关键词回退也为空: queries={}, 耗时={}ms", queries.size(), duration);
+            return RetrievalResult.empty(duration);
+        }
+
+        log.info("单路向量召回为空，已回退到关键词召回: queries={}, candidates={}", queries.size(), keywordCandidates.size());
+        RerankHelper.ScoredDocumentsResult rerankResult = rerankHelper.rerank(queries.get(0), keywordCandidates, topK);
+        boolean hit = rerankResult.topScore() != null && rerankResult.topScore() >= hitThreshold;
+        long duration = System.currentTimeMillis() - startTime;
+
+        List<String> leafIds = knowledgeTextBuilder.extractIds(rerankResult.documents());
+        List<com.example.demo.model.RagUnit> leafUnits = ragUnitQueryRepository.selectByIds(leafIds);
+        String knowledgeText = knowledgeTextBuilder.buildExpandedKnowledgeText(rerankResult.documents(), leafUnits);
+        Map<String, com.example.demo.model.RagUnit> leafUnitMap = RagUnitQueryRepository.toUnitMap(leafUnits);
+        List<com.example.demo.model.dto.HierarchyHit> hierarchyHits = new ArrayList<>();
+        for (Document doc : rerankResult.documents()) {
+            com.example.demo.model.RagUnit leafUnit = leafUnitMap.get(doc.getId());
+            if (leafUnit == null) {
+                continue;
+            }
+            hierarchyHits.add(com.example.demo.model.dto.HierarchyHit.builder()
+                    .sourceId(leafUnit.getSourceId())
+                    .leafUnitId(leafUnit.getId())
+                    .leafChunkIndex(leafUnit.getChunkIndex())
+                    .leafScore(rerankResult.scoreById().get(leafUnit.getId()))
+                    .content(leafUnit.getContent())
+                    .filename(leafUnit.getFilename())
+                    .minioUrl(leafUnit.getMinioUrl())
+                    .build());
+        }
+
+        return RetrievalResult.builder()
+                .documents(rerankResult.documents())
+                .hit(hit)
+                .retrievalMode(com.example.demo.model.dto.RetrievalMode.KEYWORD_FALLBACK)
+                .knowledgeText(knowledgeText)
+                .candidateCount(keywordCandidates.size())
+                .finalCount(rerankResult.documents().size())
+                .durationMs(duration)
+                .hierarchyHits(hierarchyHits)
+                .build();
     }
 
     public RetrievalResult retrieveWithoutRerank(String query, int topK) {
@@ -274,19 +331,20 @@ public class RagRetrievalService {
     private List<Document> collectKeywordCandidates(List<String> queries, String userId) {
         Map<String, Document> deduped = new LinkedHashMap<>();
         for (String query : queries) {
-            String keyword = normalizeKeywordQuery(query);
-            if (keyword.isBlank()) {
-                continue;
-            }
-            for (com.example.demo.model.RagUnit unit : ragUnitQueryRepository.searchLeafUnitsByKeyword(keyword, userId, candidateTopK)) {
-                if (unit.getId() == null || unit.getContent() == null || unit.getContent().isBlank()) {
-                    continue;
+            for (String keyword : extractKeywordFallbackTerms(query)) {
+                for (com.example.demo.model.RagUnit unit : ragUnitQueryRepository.searchLeafUnitsByKeyword(keyword, userId, candidateTopK)) {
+                    if (unit.getId() == null || unit.getContent() == null || unit.getContent().isBlank()) {
+                        continue;
+                    }
+                    deduped.putIfAbsent(unit.getId(), new Document(
+                            unit.getId(),
+                            unit.getContent(),
+                            vectorStoreWriteService.buildVectorMetadata(unit, unit.getFilename())
+                    ));
                 }
-                deduped.putIfAbsent(unit.getId(), new Document(
-                        unit.getId(),
-                        unit.getContent(),
-                        ragUnitService.buildVectorMetadata(unit, unit.getFilename())
-                ));
+                if (deduped.size() >= candidateTopK) {
+                    break;
+                }
             }
         }
         return new ArrayList<>(deduped.values());
@@ -317,5 +375,52 @@ public class RagRetrievalService {
         normalized = normalized.replaceAll("[？?。！!，,；;：:\"\"''（）()【】\\[\\]]", " ");
         normalized = normalized.replaceAll("\\s+", " ").trim();
         return normalized;
+    }
+
+    private List<String> extractKeywordFallbackTerms(String query) {
+        String normalized = normalizeKeywordQuery(query);
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+
+        Set<String> terms = new LinkedHashSet<>();
+        if (normalized.length() <= 60) {
+            terms.add(normalized);
+        }
+
+        String cleaned = normalized
+                .replaceAll("(请优先引用|优先引用|引用|上传|文档|知识库|回答|解决方法|解决方案|有哪些|有哪|什么|如何|怎么|请|的)", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        Pattern separator = Pattern.compile("[\\s,，。！？?；;：:、]+");
+        for (String token : separator.split(cleaned)) {
+            addKeywordTerm(terms, token);
+        }
+
+        for (String token : separator.split(normalized)) {
+            addKeywordTerm(terms, token);
+        }
+
+        return terms.stream()
+                .filter(term -> term.length() >= 2)
+                .limit(8)
+                .toList();
+    }
+
+    private void addKeywordTerm(Set<String> terms, String rawToken) {
+        if (rawToken == null) {
+            return;
+        }
+        String token = rawToken.trim();
+        if (token.length() < 2) {
+            return;
+        }
+        terms.add(token);
+
+        String stripped = token.replaceAll("(问题|方法|方案|技术|原理|机制)$", "");
+        if (stripped.length() >= 2 && !stripped.equals(token)) {
+            terms.add(stripped);
+        }
     }
 }

@@ -58,6 +58,9 @@ class RagRetrievalServiceRecallFallbackTest {
     @Mock
     private RagUnitService ragUnitService;
 
+    @Mock
+    private VectorStoreWriteService vectorStoreWriteService;
+
     private RagRetrievalService ragRetrievalService;
 
     @BeforeEach
@@ -69,7 +72,7 @@ class RagRetrievalServiceRecallFallbackTest {
 
         RerankHelper rerankHelper = new RerankHelper(rerankModel);
         UserFilterBuilder userFilterBuilder = new UserFilterBuilder();
-        KnowledgeTextBuilder knowledgeTextBuilder = new KnowledgeTextBuilder(ragUnitQueryRepository, ragUnitService);
+        KnowledgeTextBuilder knowledgeTextBuilder = new KnowledgeTextBuilder(ragUnitQueryRepository, vectorStoreWriteService);
 
         HierarchicalRetrievalStrategy hierarchicalStrategy = new HierarchicalRetrievalStrategy(
                 summaryVectorStore, ragUnitQueryRepository, rerankHelper, knowledgeTextBuilder, hierarchyConfig, userFilterBuilder);
@@ -84,6 +87,7 @@ class RagRetrievalServiceRecallFallbackTest {
                 knowledgeTextBuilder,
                 ragUnitQueryRepository,
                 ragUnitService,
+                vectorStoreWriteService,
                 userFilterBuilder,
                 Runnable::run
         );
@@ -116,7 +120,7 @@ class RagRetrievalServiceRecallFallbackTest {
         when(leafVectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
         when(ragUnitQueryRepository.searchLeafUnitsByKeyword(any(), any(), any(int.class))).thenReturn(List.of(keywordUnit));
         when(ragUnitQueryRepository.selectByIds(anyList())).thenReturn(List.of(keywordUnit));
-        when(ragUnitService.buildVectorMetadata(any(RagUnit.class), any(String.class)))
+        when(vectorStoreWriteService.buildVectorMetadata(any(RagUnit.class), any(String.class)))
                 .thenReturn(Map.of("user_id", "u1"));
         when(rerankModel.call(any(RerankRequest.class))).thenReturn(new RerankResponse(List.of(
                 scored(rerankedDocument, 0.93)
@@ -137,6 +141,46 @@ class RagRetrievalServiceRecallFallbackTest {
         assertEquals(1, result.getFinalCount());
         assertEquals("leaf-1", result.getDocuments().get(0).getId());
         assertTrue(result.getKnowledgeText().contains("鼻鼽"));
+    }
+
+    @Test
+    void shouldExtractCoreKeywordWhenSingleQueryVectorRecallMisses() {
+        RagUnit keywordUnit = leafUnit(
+                "leaf-length",
+                "长度外推问题",
+                "长度外推问题通常可以通过位置插值、NTK-aware RoPE、YaRN 等方法缓解。",
+                3
+        );
+        Document rerankedDocument = Document.builder()
+                .id("leaf-length")
+                .text(keywordUnit.getContent())
+                .metadata(Map.of("user_id", "u1"))
+                .score(0.91)
+                .build();
+
+        when(summaryVectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+        when(leafVectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+        when(ragUnitQueryRepository.searchLeafUnitsByKeyword(any(), any(), any(int.class)))
+                .thenAnswer(invocation -> "长度外推".equals(invocation.getArgument(0))
+                        ? List.of(keywordUnit)
+                        : List.of());
+        when(ragUnitQueryRepository.selectByIds(anyList())).thenReturn(List.of(keywordUnit));
+        when(vectorStoreWriteService.buildVectorMetadata(any(RagUnit.class), any(String.class)))
+                .thenReturn(Map.of("user_id", "u1"));
+        when(rerankModel.call(any(RerankRequest.class))).thenReturn(new RerankResponse(List.of(
+                scored(rerankedDocument, 0.91)
+        )));
+
+        RetrievalResult result = ragRetrievalService.retrieveWithMultiPathRecall(
+                "长度外推问题 的 解决方法 有哪些？请优先引用我上传的文档回答。",
+                List.of(),
+                "u1"
+        );
+
+        assertTrue(result.isHit());
+        assertEquals(RetrievalMode.KEYWORD_FALLBACK, result.getRetrievalMode());
+        assertEquals(1, result.getCandidateCount());
+        assertTrue(result.getKnowledgeText().contains("NTK-aware RoPE"));
     }
 
     @Test
