@@ -29,9 +29,9 @@ spring:
           baidu-mcp:
             url: https://mcp.map.baidu.com/sse
             headers:
-              ak: YOUR_BAIDU_MAP_AK
+              ak: ${BAIDU_MAP_AK:YOUR_BAIDU_MAP_AK}
     dashscope:
-      api-key: YOUR_DASHSCOPE_API_KEY
+      api-key: ${DASHSCOPE_API_KEY:YOUR_DASHSCOPE_API_KEY}
       connect-timeout-ms: 10000
       read-timeout-ms: 60000
       chat:
@@ -41,21 +41,26 @@ spring:
         options:
           model: text-embedding-v3
     vectorstore:
-      redis:
-        initialize-schema: false
-        index-name: atguigu-index
-        prefix: atguigu-prefix
-        summary-index-name: atguigu-summary-index
-        summary-prefix: atguigu-summary-prefix
-        ttl-seconds: 0
+      milvus:
+        initialize-schema: true
+        database-name: default
+        leaf-collection-name: rag_leaf_vectors
+        summary-collection-name: rag_summary_vectors
+        index-type: IVF_FLAT
+        metric-type: COSINE
+        index-parameters: '{"nlist":1024}'
+        client:
+          host: localhost
+          port: 19530
+          secure: false
   servlet:
     multipart:
       max-file-size: 500MB
       max-request-size: 500MB
   datasource:
-    url: jdbc:mysql://39.108.175.183:3306/rag_knowledge?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    url: jdbc:mysql://localhost:3306/rag_knowledge?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
-    password: YOUR_DB_PASSWORD
+    password: ${DB_PASSWORD:YOUR_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 30
@@ -68,9 +73,9 @@ spring:
   data:
     redis:
       client-type: jedis          # Spring Boot 3.5+ 需要显式指定，否则不会自动配置 JedisConnectionFactory
-      host: 120.24.238.51
+      host: localhost
       port: 6379
-      password: YOUR_REDIS_PASSWORD
+      password: ${REDIS_PASSWORD:}
       database: 0
       timeout: 60000ms
       connect-timeout: 30000ms
@@ -83,10 +88,10 @@ spring:
           time-between-eviction-runs: 30000ms
           min-evictable-idle-time: 60000ms
   rabbitmq:
-    host: 120.24.238.51
+    host: localhost
     port: 5672
-    username: rabbitmq
-    password: YOUR_RABBITMQ_PASSWORD
+    username: guest
+    password: guest
     virtual-host: /
     connection-timeout: 30000
     listener:
@@ -103,9 +108,9 @@ spring:
         max-attempts: 3
 
 minio:
-  endpoint: http://39.108.175.183:9000
+  endpoint: http://localhost:9000
   access-key: minioadmin
-  secret-key: YOUR_MINIO_SECRET_KEY
+  secret-key: minioadmin
   bucket: rag-knowledge
 
 file:
@@ -124,7 +129,7 @@ asr:
     - dashscope-paraformer
   dashscope:
     enabled: true
-    api-key: YOUR_DASHSCOPE_API_KEY
+    api-key: ${DASHSCOPE_API_KEY:YOUR_DASHSCOPE_API_KEY}
     model: paraformer-realtime-v2
     format: pcm
     sample-rate: 16000
@@ -185,7 +190,7 @@ app:
     fallback-dir: ./temp/emails
 
 mineru:
-  api-key: YOUR_MINERU_API_KEY
+  api-key: ${MINERU_API_KEY:YOUR_MINERU_API_KEY}
   model-version: vlm
 
 resilience4j:
@@ -231,4 +236,3 @@ management:
       enabled: true
     rabbit:
       enabled: true
-

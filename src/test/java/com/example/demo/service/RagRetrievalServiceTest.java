@@ -23,11 +23,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.filter.FilterExpressionTextParser;
-import org.springframework.ai.vectorstore.redis.RedisFilterExpressionConverter;
-import org.springframework.ai.vectorstore.redis.RedisVectorStore;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.filter.FilterExpressionTextParser;
+import org.springframework.ai.vectorstore.milvus.MilvusFilterExpressionConverter;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.HashMap;
@@ -218,28 +217,26 @@ class RagRetrievalServiceTest {
     }
 
     @Test
-    void shouldEscapeUserIdInRedisTagFilterExpression() {
+    void shouldBuildMilvusCompatibleUserFilterExpression() {
         String userId = "fb732c63-44f7-4666-b884-f6524298afe0";
 
         UserFilterBuilder filterBuilder = new UserFilterBuilder();
         String filterExpression = filterBuilder.build(userId);
 
         assertEquals(
-                "user_id == 'fb732c63\\-44f7\\-4666\\-b884\\-f6524298afe0'",
+                "user_id == 'fb732c63-44f7-4666-b884-f6524298afe0'",
                 filterExpression
         );
 
         FilterExpressionTextParser parser = new FilterExpressionTextParser();
-        RedisFilterExpressionConverter converter = new RedisFilterExpressionConverter(
-                List.of(RedisVectorStore.MetadataField.tag("user_id"))
-        );
+        MilvusFilterExpressionConverter converter = new MilvusFilterExpressionConverter();
 
         String nativeExpression = converter.convertExpression(parser.parse(filterExpression));
 
-        // Spring AI 1.1.x RedisFilterExpressionConverter 使用双反斜杠转义连字符
-        String bs = "\\\\"; // 两个反斜杠
-        String expected = "@user_id:{fb732c63" + bs + "\\-" + "44f7" + bs + "\\-" + "4666" + bs + "\\-" + "b884" + bs + "\\-" + "f6524298afe0}";
-        assertEquals(expected, nativeExpression);
+        assertEquals(
+                "metadata[\"user_id\"] == \"fb732c63-44f7-4666-b884-f6524298afe0\"",
+                nativeExpression
+        );
     }
 
     private static Document doc(String id, String text, double score) {

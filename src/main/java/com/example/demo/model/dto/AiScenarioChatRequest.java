@@ -3,20 +3,14 @@ package com.example.demo.model.dto;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import java.util.Map;
 
-/**
- * 多轮对话请求DTO
- */
 @Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class MultiTurnChatRequest {
+public class AiScenarioChatRequest {
     @Size(max = 128, message = "用户ID长度不能超过128个字符")
     private String userId;
 
@@ -37,9 +31,22 @@ public class MultiTurnChatRequest {
     @Size(max = 128, message = "计划ID长度不能超过128个字符")
     private String approvedPlanId;
 
-    private AiScenario scenario = AiScenario.GENERAL_CHAT;
+    @NotNull(message = "AI场景不能为空")
+    private AiScenario scenario;
 
     @Size(max = 32, message = "业务上下文字段不能超过32个")
     private Map<String, Object> bizContext;
-}
 
+    public MultiTurnChatRequest toMultiTurnChatRequest() {
+        MultiTurnChatRequest request = new MultiTurnChatRequest();
+        request.setUserId(userId);
+        request.setSessionId(sessionId);
+        request.setTurnCount(turnCount);
+        request.setMessage(message);
+        request.setModeHint(AgentMode.defaultIfNull(modeHint));
+        request.setApprovedPlanId(approvedPlanId);
+        request.setScenario(scenario);
+        request.setBizContext(bizContext);
+        return request;
+    }
+}

@@ -9,7 +9,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.vectorstore.VectorStore;
-import redis.clients.jedis.JedisPooled;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,14 +34,11 @@ class VectorStoreWriteServiceTest {
     @Mock
     private VectorStore summaryVectorStore;
 
-    @Mock
-    private JedisPooled jedisPooled;
-
     private VectorStoreWriteService vectorStoreWriteService;
 
     @BeforeEach
     void setUp() {
-        vectorStoreWriteService = new VectorStoreWriteService(leafVectorStore, summaryVectorStore, jedisPooled, "leaf-index", "summary-index");
+        vectorStoreWriteService = new VectorStoreWriteService(leafVectorStore, summaryVectorStore);
     }
 
     @Test

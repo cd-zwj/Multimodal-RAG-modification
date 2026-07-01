@@ -1,190 +1,143 @@
 package com.example.demo.Config;
 
 import io.micrometer.observation.ObservationRegistry;
+import io.milvus.client.MilvusServiceClient;
+import io.milvus.param.ConnectParam;
+import io.milvus.param.IndexType;
+import io.milvus.param.MetricType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.redis.RedisVectorStore;
+import org.springframework.ai.vectorstore.milvus.MilvusVectorStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import org.springframework.data.redis.connection.jedis.JedisConnectionFactory;
-import redis.clients.jedis.DefaultJedisClientConfig;
-import redis.clients.jedis.HostAndPort;
-import redis.clients.jedis.JedisPooled;
-import redis.clients.jedis.exceptions.JedisDataException;
-import redis.clients.jedis.search.FTCreateParams;
-import redis.clients.jedis.search.FieldName;
-import redis.clients.jedis.search.IndexDataType;
-import redis.clients.jedis.search.schemafields.NumericField;
-import redis.clients.jedis.search.schemafields.SchemaField;
-import redis.clients.jedis.search.schemafields.TagField;
-import redis.clients.jedis.search.schemafields.TextField;
-import redis.clients.jedis.search.schemafields.VectorField;
+import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Configuration
 public class VectorStoreConfig {
 
     @Bean
-    public JedisPooled jedisPooled(JedisConnectionFactory jedisConnectionFactory) {
-        DefaultJedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
-                .ssl(jedisConnectionFactory.isUseSsl())
-                .clientName(jedisConnectionFactory.getClientName())
-                .timeoutMillis(jedisConnectionFactory.getTimeout())
-                .password(jedisConnectionFactory.getPassword())
-                .build();
-        return new JedisPooled(
-                new HostAndPort(jedisConnectionFactory.getHostName(), jedisConnectionFactory.getPort()),
-                clientConfig
-        );
+    public MilvusServiceClient milvusServiceClient(
+            @Value("${spring.ai.vectorstore.milvus.client.host:localhost}") String host,
+            @Value("${spring.ai.vectorstore.milvus.client.port:19530}") int port,
+            @Value("${spring.ai.vectorstore.milvus.client.uri:}") String uri,
+            @Value("${spring.ai.vectorstore.milvus.client.username:}") String username,
+            @Value("${spring.ai.vectorstore.milvus.client.password:}") String password,
+            @Value("${spring.ai.vectorstore.milvus.client.token:}") String token,
+            @Value("${spring.ai.vectorstore.milvus.client.secure:false}") boolean secure,
+            @Value("${spring.ai.vectorstore.milvus.database-name:default}") String databaseName,
+            @Value("${spring.ai.vectorstore.milvus.client.connect-timeout-ms:10000}") long connectTimeoutMs,
+            @Value("${spring.ai.vectorstore.milvus.client.keep-alive-time-ms:55000}") long keepAliveTimeMs,
+            @Value("${spring.ai.vectorstore.milvus.client.keep-alive-timeout-ms:20000}") long keepAliveTimeoutMs,
+            @Value("${spring.ai.vectorstore.milvus.client.rpc-deadline-ms:60000}") long rpcDeadlineMs) {
+
+        ConnectParam.Builder builder = ConnectParam.newBuilder()
+                .withDatabaseName(databaseName)
+                .withConnectTimeout(connectTimeoutMs, TimeUnit.MILLISECONDS)
+                .withKeepAliveTime(keepAliveTimeMs, TimeUnit.MILLISECONDS)
+                .withKeepAliveTimeout(keepAliveTimeoutMs, TimeUnit.MILLISECONDS)
+                .withRpcDeadline(rpcDeadlineMs, TimeUnit.MILLISECONDS)
+                .withSecure(secure);
+
+        if (StringUtils.hasText(uri)) {
+            builder.withUri(uri);
+        } else {
+            builder.withHost(host).withPort(port);
+        }
+
+        if (StringUtils.hasText(token)) {
+            builder.withToken(token);
+        } else if (StringUtils.hasText(username) || StringUtils.hasText(password)) {
+            builder.withAuthorization(username, password);
+        }
+
+        log.info("Milvus vector store client configured: endpoint={}, database={}",
+                StringUtils.hasText(uri) ? uri : host + ":" + port, databaseName);
+        return new MilvusServiceClient(builder.build());
     }
 
     @Bean
     @Primary
     public VectorStore leafVectorStore(EmbeddingModel embeddingModel,
-                                       JedisPooled jedisPooled,
-                                       @Value("${spring.ai.vectorstore.redis.initialize-schema:true}") boolean initializeSchema,
-                                       @Value("${spring.ai.vectorstore.redis.index-name:rag-leaf-index}") String indexName,
-                                       @Value("${spring.ai.vectorstore.redis.prefix:rag-leaf-prefix}") String prefix,
+                                       MilvusServiceClient milvusServiceClient,
+                                       @Value("${spring.ai.vectorstore.milvus.initialize-schema:true}") boolean initializeSchema,
+                                       @Value("${spring.ai.vectorstore.milvus.database-name:default}") String databaseName,
+                                       @Value("${spring.ai.vectorstore.milvus.leaf-collection-name:rag_leaf_vectors}") String collectionName,
+                                       @Value("${spring.ai.vectorstore.milvus.embedding-dimension:0}") int embeddingDimension,
+                                       @Value("${spring.ai.vectorstore.milvus.index-type:IVF_FLAT}") String indexType,
+                                       @Value("${spring.ai.vectorstore.milvus.metric-type:COSINE}") String metricType,
+                                       @Value("${spring.ai.vectorstore.milvus.index-parameters:}") String indexParameters,
                                        ObjectProvider<ObservationRegistry> observationRegistryProvider) {
-        RedisVectorStore store = RedisVectorStore.builder(jedisPooled, embeddingModel)
-                .initializeSchema(initializeSchema)
-                .observationRegistry(observationRegistryProvider.getIfAvailable(() -> ObservationRegistry.NOOP))
-                .indexName(indexName)
-                .prefix(prefix)
-                .metadataFields(defaultMetadataFields())
-                .build();
-        ensureIndexExists(jedisPooled, indexName, prefix, embeddingModel.dimensions());
-        return store;
+        return buildMilvusVectorStore(
+                embeddingModel,
+                milvusServiceClient,
+                initializeSchema,
+                databaseName,
+                collectionName,
+                embeddingDimension,
+                indexType,
+                metricType,
+                indexParameters,
+                observationRegistryProvider);
     }
 
     @Bean
     public VectorStore summaryVectorStore(EmbeddingModel embeddingModel,
-                                          JedisPooled jedisPooled,
-                                          @Value("${spring.ai.vectorstore.redis.initialize-schema:true}") boolean initializeSchema,
-                                          @Value("${spring.ai.vectorstore.redis.summary-index-name:rag-summary-index}") String indexName,
-                                          @Value("${spring.ai.vectorstore.redis.summary-prefix:rag-summary-prefix}") String prefix,
+                                          MilvusServiceClient milvusServiceClient,
+                                          @Value("${spring.ai.vectorstore.milvus.initialize-schema:true}") boolean initializeSchema,
+                                          @Value("${spring.ai.vectorstore.milvus.database-name:default}") String databaseName,
+                                          @Value("${spring.ai.vectorstore.milvus.summary-collection-name:rag_summary_vectors}") String collectionName,
+                                          @Value("${spring.ai.vectorstore.milvus.embedding-dimension:0}") int embeddingDimension,
+                                          @Value("${spring.ai.vectorstore.milvus.index-type:IVF_FLAT}") String indexType,
+                                          @Value("${spring.ai.vectorstore.milvus.metric-type:COSINE}") String metricType,
+                                          @Value("${spring.ai.vectorstore.milvus.index-parameters:}") String indexParameters,
                                           ObjectProvider<ObservationRegistry> observationRegistryProvider) {
-        RedisVectorStore store = RedisVectorStore.builder(jedisPooled, embeddingModel)
+        return buildMilvusVectorStore(
+                embeddingModel,
+                milvusServiceClient,
+                initializeSchema,
+                databaseName,
+                collectionName,
+                embeddingDimension,
+                indexType,
+                metricType,
+                indexParameters,
+                observationRegistryProvider);
+    }
+
+    private VectorStore buildMilvusVectorStore(EmbeddingModel embeddingModel,
+                                               MilvusServiceClient milvusServiceClient,
+                                               boolean initializeSchema,
+                                               String databaseName,
+                                               String collectionName,
+                                               int embeddingDimension,
+                                               String indexType,
+                                               String metricType,
+                                               String indexParameters,
+                                               ObjectProvider<ObservationRegistry> observationRegistryProvider) {
+        MilvusVectorStore.Builder builder = MilvusVectorStore.builder(milvusServiceClient, embeddingModel)
                 .initializeSchema(initializeSchema)
-                .observationRegistry(observationRegistryProvider.getIfAvailable(() -> ObservationRegistry.NOOP))
-                .indexName(indexName)
-                .prefix(prefix)
-                .metadataFields(defaultMetadataFields())
-                .build();
-        ensureIndexExists(jedisPooled, indexName, prefix, embeddingModel.dimensions());
-        return store;
-    }
+                .databaseName(databaseName)
+                .collectionName(collectionName)
+                .indexType(IndexType.valueOf(indexType))
+                .metricType(MetricType.valueOf(metricType))
+                .observationRegistry(observationRegistryProvider.getIfAvailable(() -> ObservationRegistry.NOOP));
 
-    void ensureIndexExists(JedisPooled jedisPooled, String indexName, String prefix, int dimensions) {
-        try {
-            Map<String, Object> info = jedisPooled.ftInfo(indexName);
-            if (!isCompatibleJsonIndex(info, prefix)) {
-                log.warn("RediSearch index {} schema/prefix is incompatible, recreating without deleting documents", indexName);
-                jedisPooled.ftDropIndex(indexName);
-                createJsonVectorIndex(jedisPooled, indexName, prefix, dimensions);
-            }
-            log.info("RediSearch index exists: {}", indexName);
-            return;
-        } catch (JedisDataException e) {
-            String lowerMsg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
-            if (isRediSearchMissing(lowerMsg)) {
-                log.error("RediSearch module not loaded. Please install redis-stack.", e);
-                throw new RuntimeException("Redis missing RediSearch module, vector search unavailable.", e);
-            }
-            if (!lowerMsg.contains("unknown index")) {
-                throw e;
-            }
+        if (embeddingDimension > 0) {
+            builder.embeddingDimension(embeddingDimension);
         }
-        log.warn("RediSearch index {} missing, attempting auto-create...", indexName);
-        try {
-            createJsonVectorIndex(jedisPooled, indexName, prefix, dimensions);
-            log.info("RediSearch index auto-created: {}", indexName);
-        } catch (Exception e) {
-            String msg = e.getMessage() != null ? e.getMessage() : "";
-            if (isRediSearchMissing(msg.toLowerCase())) {
-                log.error("RediSearch module not loaded. Please install redis-stack.", e);
-                throw new RuntimeException("Redis missing RediSearch module, vector search unavailable.", e);
-            }
-            log.error("RediSearch index creation failed: index={}, error={}", indexName, msg);
-            throw new RuntimeException(String.format("RediSearch index '%s' creation failed: %s", indexName, msg), e);
+        if (StringUtils.hasText(indexParameters)) {
+            builder.indexParameters(indexParameters);
         }
-    }
 
-    private void createJsonVectorIndex(JedisPooled jedisPooled, String indexName, String prefix, int dimensions) {
-        Map<String, Object> vectorAttrs = new HashMap<>();
-        vectorAttrs.put("TYPE", "FLOAT32");
-        vectorAttrs.put("DIM", dimensions);
-        vectorAttrs.put("DISTANCE_METRIC", "COSINE");
-
-        List<SchemaField> fields = new ArrayList<>();
-        fields.add(TextField.of(FieldName.of("$.content").as("content")));
-        fields.add(new VectorField(
-                FieldName.of("$.embedding").as("embedding"),
-                VectorField.VectorAlgorithm.HNSW,
-                vectorAttrs
-        ));
-        fields.add(TagField.of(FieldName.of("$.source_id").as("source_id")));
-        fields.add(TagField.of(FieldName.of("$.source_type").as("source_type")));
-        fields.add(TagField.of(FieldName.of("$.unit_id").as("unit_id")));
-        fields.add(TagField.of(FieldName.of("$.user_id").as("user_id")));
-        fields.add(TagField.of(FieldName.of("$.node_type").as("node_type")));
-        fields.add(TagField.of(FieldName.of("$.parent_id").as("parent_id")));
-        fields.add(TextField.of(FieldName.of("$.filename").as("filename")));
-        fields.add(TextField.of(FieldName.of("$.title").as("title")));
-        fields.add(NumericField.of(FieldName.of("$.tree_level").as("tree_level")));
-        fields.add(NumericField.of(FieldName.of("$.child_count").as("child_count")));
-        fields.add(NumericField.of(FieldName.of("$.chunk_index").as("chunk_index")));
-        fields.add(NumericField.of(FieldName.of("$.start_time").as("start_time")));
-        fields.add(NumericField.of(FieldName.of("$.end_time").as("end_time")));
-
-        jedisPooled.ftCreate(
-                indexName,
-                FTCreateParams.createParams()
-                        .on(IndexDataType.JSON)
-                        .addPrefix(prefix),
-                fields
-        );
-    }
-
-    private boolean isCompatibleJsonIndex(Map<String, Object> info, String prefix) {
-        String indexDefinition = String.valueOf(info.get("index_definition"));
-        Object attributes = info.get("attributes");
-        return indexDefinition.contains("key_type, JSON")
-                && indexDefinition.contains(prefix)
-                && String.valueOf(attributes).contains("$.embedding")
-                && String.valueOf(attributes).contains("$.user_id");
-    }
-
-    private boolean isRediSearchMissing(String lowerMsg) {
-        return lowerMsg.contains("unknown command")
-                || lowerMsg.contains("unknown subcommand")
-                || (lowerMsg.contains("module") && lowerMsg.contains("not loaded"));
-    }
-
-    static List<RedisVectorStore.MetadataField> defaultMetadataFields() {
-        return List.of(
-                RedisVectorStore.MetadataField.tag("source_id"),
-                RedisVectorStore.MetadataField.tag("source_type"),
-                RedisVectorStore.MetadataField.tag("unit_id"),
-                RedisVectorStore.MetadataField.tag("user_id"),
-                RedisVectorStore.MetadataField.tag("node_type"),
-                RedisVectorStore.MetadataField.tag("parent_id"),
-                RedisVectorStore.MetadataField.text("filename"),
-                RedisVectorStore.MetadataField.text("title"),
-                RedisVectorStore.MetadataField.numeric("tree_level"),
-                RedisVectorStore.MetadataField.numeric("child_count"),
-                RedisVectorStore.MetadataField.numeric("chunk_index"),
-                RedisVectorStore.MetadataField.numeric("start_time"),
-                RedisVectorStore.MetadataField.numeric("end_time")
-        );
+        log.info("Milvus vector store configured: collection={}, initializeSchema={}, indexType={}, metricType={}",
+                collectionName, initializeSchema, indexType, metricType);
+        return builder.build();
     }
 }

@@ -6,9 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import redis.clients.jedis.JedisPooled;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,21 +23,12 @@ public class VectorStoreWriteService {
 
     private final VectorStore leafVectorStore;
     private final VectorStore summaryVectorStore;
-    private final JedisPooled jedisPooled;
-    private final String leafIndexName;
-    private final String summaryIndexName;
 
     public VectorStoreWriteService(
             @Qualifier("leafVectorStore") VectorStore leafVectorStore,
-            @Qualifier("summaryVectorStore") VectorStore summaryVectorStore,
-            JedisPooled jedisPooled,
-            @Value("${spring.ai.vectorstore.redis.index-name:rag-leaf-index}") String leafIndexName,
-            @Value("${spring.ai.vectorstore.redis.summary-index-name:rag-summary-index}") String summaryIndexName) {
+            @Qualifier("summaryVectorStore") VectorStore summaryVectorStore) {
         this.leafVectorStore = leafVectorStore;
         this.summaryVectorStore = summaryVectorStore;
-        this.jedisPooled = jedisPooled;
-        this.leafIndexName = leafIndexName;
-        this.summaryIndexName = summaryIndexName;
     }
 
     public void addUnitsToVectorStores(List<RagUnit> units, String filename) {
@@ -63,11 +52,9 @@ public class VectorStoreWriteService {
 
         if (!leafDocuments.isEmpty()) {
             batchAdd(leafVectorStore, leafDocuments);
-            verifyIndexExists(leafIndexName, leafDocuments.get(0).getId());
         }
         if (!summaryDocuments.isEmpty()) {
             batchAdd(summaryVectorStore, summaryDocuments);
-            verifyIndexExists(summaryIndexName, summaryDocuments.get(0).getId());
         }
     }
 
@@ -77,21 +64,6 @@ public class VectorStoreWriteService {
         }
         leafVectorStore.delete(ids);
         summaryVectorStore.delete(ids);
-    }
-
-    private void verifyIndexExists(String indexName, String sampleDocumentId) {
-        try {
-            jedisPooled.ftInfo(indexName);
-            log.info("RediSearch index verified: index={}, sampleDocId={}", indexName, sampleDocumentId);
-        } catch (redis.clients.jedis.exceptions.JedisDataException e) {
-            log.error("RediSearch index missing: index={}, data written but not searchable.", indexName);
-            throw new RuntimeException(
-                String.format("Redis vector index '%s' missing, document data not searchable. " +
-                    "Please ensure Redis has RediSearch module loaded.", indexName), e);
-        } catch (Exception e) {
-            String message = e.getMessage() != null ? e.getMessage() : "";
-            log.warn("RediSearch index verification anomaly: index={}, sampleDocId={}, error={}", indexName, sampleDocumentId, message);
-        }
     }
 
     private void batchAdd(VectorStore vectorStore, List<Document> documents) {

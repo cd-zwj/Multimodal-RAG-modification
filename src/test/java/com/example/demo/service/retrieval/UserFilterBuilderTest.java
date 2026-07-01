@@ -21,18 +21,17 @@ class UserFilterBuilderTest {
     }
 
     @Test
-    void build_withSpecialChars_escapesRedisTagCharacters() {
-        // Dashes and dots must be backslash-escaped
+    void build_withDash_doesNotUseRedisTagEscaping() {
         String result = userFilterBuilder.build("abc-123");
 
-        assertEquals("user_id == 'abc\\-123'", result);
+        assertEquals("user_id == 'abc-123'", result);
     }
 
     @Test
-    void build_withDotsAndMixedSpecialChars_escapesAll() {
+    void build_withDotsAndMixedSpecialChars_keepsMilvusCompatibleLiteral() {
         String result = userFilterBuilder.build("user.name-01");
 
-        assertEquals("user_id == 'user\\.name\\-01'", result);
+        assertEquals("user_id == 'user.name-01'", result);
     }
 
     @Test
@@ -51,5 +50,12 @@ class UserFilterBuilderTest {
     void build_withBlank_returnsEmptyString() {
         assertEquals("", userFilterBuilder.build(""));
         assertEquals("", userFilterBuilder.build("   "));
+    }
+
+    @Test
+    void build_withQuote_escapesStringLiteral() {
+        String result = userFilterBuilder.build("user'01");
+
+        assertEquals("user_id == 'user\\'01'", result);
     }
 }

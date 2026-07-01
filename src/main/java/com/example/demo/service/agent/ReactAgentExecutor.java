@@ -8,10 +8,12 @@ import com.example.demo.service.QueryRewriteService;
 import com.example.demo.service.RagRetrievalService;
 import com.example.demo.service.RetrievalSubQueryService;
 import com.example.demo.service.UserProfileService;
+import com.example.demo.service.ai.AiScenarioPromptProvider;
+import com.example.demo.service.ai.AiScenarioToolProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -25,7 +27,6 @@ import static org.springframework.ai.chat.memory.ChatMemory.CONVERSATION_ID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ReactAgentExecutor {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -36,6 +37,43 @@ public class ReactAgentExecutor {
     private final RetrievalSubQueryService retrievalSubQueryService;
     private final UserProfileService userProfileService;
     private final DateTimeTools dateTimeTools;
+    private final AiScenarioPromptProvider aiScenarioPromptProvider;
+    private final AiScenarioToolProvider aiScenarioToolProvider;
+
+    @Autowired
+    public ReactAgentExecutor(ChatClient deepchatClient,
+                              RagRetrievalService ragRetrievalService,
+                              QueryRewriteService queryRewriteService,
+                              RetrievalSubQueryService retrievalSubQueryService,
+                              UserProfileService userProfileService,
+                              DateTimeTools dateTimeTools,
+                              AiScenarioPromptProvider aiScenarioPromptProvider,
+                              AiScenarioToolProvider aiScenarioToolProvider) {
+        this.deepchatClient = deepchatClient;
+        this.ragRetrievalService = ragRetrievalService;
+        this.queryRewriteService = queryRewriteService;
+        this.retrievalSubQueryService = retrievalSubQueryService;
+        this.userProfileService = userProfileService;
+        this.dateTimeTools = dateTimeTools;
+        this.aiScenarioPromptProvider = aiScenarioPromptProvider;
+        this.aiScenarioToolProvider = aiScenarioToolProvider;
+    }
+
+    public ReactAgentExecutor(ChatClient deepchatClient,
+                              RagRetrievalService ragRetrievalService,
+                              QueryRewriteService queryRewriteService,
+                              RetrievalSubQueryService retrievalSubQueryService,
+                              UserProfileService userProfileService,
+                              DateTimeTools dateTimeTools) {
+        this.deepchatClient = deepchatClient;
+        this.ragRetrievalService = ragRetrievalService;
+        this.queryRewriteService = queryRewriteService;
+        this.retrievalSubQueryService = retrievalSubQueryService;
+        this.userProfileService = userProfileService;
+        this.dateTimeTools = dateTimeTools;
+        this.aiScenarioPromptProvider = null;
+        this.aiScenarioToolProvider = null;
+    }
 
     public Flux<ServerSentEvent<String>> execute(MultiTurnChatRequest request, String userId) {
         String originalQuery = request.getMessage();
@@ -49,12 +87,13 @@ public class ReactAgentExecutor {
                 userId
         );
 
-        String systemPrompt = buildMultiTurnSystemPrompt(userId, result);
+        requireScenarioAccess(userId, request);
+        String systemPrompt = buildMultiTurnSystemPrompt(userId, result, request);
         ServerSentEvent<String> citationsEvent = AgentSseEvents.event("citations", serializeCitations(result));
 
         Flux<ServerSentEvent<String>> textFlux = deepchatClient.prompt()
                 .advisors(advisorSpec -> advisorSpec.param(CONVERSATION_ID, request.getSessionId()))
-                .tools(dateTimeTools)
+                .tools(resolveTools(userId, request))
                 .system(systemPrompt)
                 .user(originalQuery)
                 .stream()
@@ -103,8 +142,24 @@ public class ReactAgentExecutor {
         }
     }
 
-    private String buildMultiTurnSystemPrompt(String userId, RetrievalResult result) {
+    private Object[] resolveTools(String userId, MultiTurnChatRequest request) {
+        if (aiScenarioToolProvider == null) {
+            return new Object[]{dateTimeTools};
+        }
+        return aiScenarioToolProvider.resolveTools(userId, request.getScenario(), request.getBizContext());
+    }
+
+    private void requireScenarioAccess(String userId, MultiTurnChatRequest request) {
+        if (aiScenarioToolProvider != null) {
+            aiScenarioToolProvider.requireScenarioAccess(userId, request.getScenario());
+        }
+    }
+
+    private String buildMultiTurnSystemPrompt(String userId, RetrievalResult result, MultiTurnChatRequest request) {
         StringBuilder systemPrompt = new StringBuilder("你是一个智能问答助手。");
+        if (aiScenarioPromptProvider != null) {
+            systemPrompt.append(aiScenarioPromptProvider.buildPrompt(request.getScenario(), request.getBizContext()));
+        }
         String userProfile = userProfileService.getProfile(userId);
         if (userProfile != null) {
             systemPrompt.append("\n\n【用户背景与偏好（长期记忆）】\n")

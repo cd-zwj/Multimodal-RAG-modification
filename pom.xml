@@ -67,11 +67,10 @@
             <!-- 鐢?spring-ai-alibaba-bom 绠＄悊 -->
         </dependency>
 
-        <!-- Spring AI Redis 鍚戦噺瀛樺偍 -->
+        <!-- Spring AI Milvus vector store -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-vector-store-redis</artifactId>
-            <!-- 鐢?spring-ai-bom:1.0.0 绠＄悊 -->
+            <artifactId>spring-ai-starter-vector-store-milvus</artifactId>
         </dependency>
 
         <!-- Redis 瀹㈡埛绔?-->

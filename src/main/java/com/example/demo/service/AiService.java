@@ -17,6 +17,7 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -32,6 +33,8 @@ import static org.springframework.ai.chat.memory.ChatMemory.CONVERSATION_ID;
 @Service
 public class AiService {
 
+    private static final Duration MULTI_TURN_STREAM_TIMEOUT = Duration.ofSeconds(60);
+    private static final String AI_UNAVAILABLE_MESSAGE = "AI 服务暂时不可用，请稍后重试";
     private final ChatClient deepchatClient;
     private final RagRetrievalService ragRetrievalService;
     private final UserProfileService userProfileService;
@@ -128,23 +131,32 @@ public class AiService {
     }
 
     public Flux<ServerSentEvent<String>> multiTurnChat(MultiTurnChatRequest request) {
+        Flux<ServerSentEvent<String>> chatFlux;
         if (agentOrchestrator != null) {
-            return agentOrchestrator.chat(request);
+            chatFlux = agentOrchestrator.chat(request);
+        } else {
+            String userId = chatSessionService.requireActiveSessionUser(request.getSessionId());
+            if (request.getUserId() != null && !request.getUserId().equals(userId)) {
+                throw new IllegalArgumentException("会话用户与当前登录用户不一致");
+            }
+            chatFlux = legacyReactAgentExecutor.execute(request, userId);
         }
-        String userId = chatSessionService.requireActiveSessionUser(request.getSessionId());
-        if (request.getUserId() != null && !request.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("会话用户与当前登录用户不一致");
-        }
-        return legacyReactAgentExecutor.execute(request, userId);
+        return chatFlux
+                .timeout(MULTI_TURN_STREAM_TIMEOUT)
+                .onErrorResume(t -> multiTurnChatFallback(request, t));
     }
 
     public Flux<ServerSentEvent<String>> multiTurnChatFallback(MultiTurnChatRequest request, Throwable t) {
-        log.warn("multiTurnChat 熔断降级: sessionId={}, error={}", request.getSessionId(), t.getMessage());
+        log.warn("multiTurnChat 降级: sessionId={}, error={}", request.getSessionId(), t.getMessage());
         ServerSentEvent<String> errorEvent = ServerSentEvent.<String>builder()
                 .event("error")
-                .data("AI 服务暂时不可用，请稍后重试")
+                .data(AI_UNAVAILABLE_MESSAGE)
                 .build();
-        return Flux.just(errorEvent);
+        ServerSentEvent<String> doneEvent = ServerSentEvent.<String>builder()
+                .event("done")
+                .data("{}")
+                .build();
+        return Flux.just(errorEvent, doneEvent);
     }
 
     private String buildSingleTurnSystemPrompt(RetrievalResult result) {

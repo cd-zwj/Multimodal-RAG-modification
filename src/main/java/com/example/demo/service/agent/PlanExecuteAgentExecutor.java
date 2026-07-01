@@ -92,7 +92,9 @@ public class PlanExecuteAgentExecutor {
                 request.getTurnCount(),
                 buildExecutionMessage(request, plan),
                 request.getModeHint(),
-                request.getApprovedPlanId()
+                request.getApprovedPlanId(),
+                request.getScenario(),
+                request.getBizContext()
         );
         return reactAgentExecutor.execute(executeRequest, userId);
     }
@@ -177,3 +179,4 @@ public class PlanExecuteAgentExecutor {
         private String planText;
     }
 }
+

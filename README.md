@@ -1,195 +1,173 @@
 # RAG 知识库问答系统
 
-一个基于 `Spring Boot 3`、`Spring AI`、`Vue 3` 构建的企业级 RAG（Retrieval-Augmented Generation，检索增强生成）项目。
-它把“文档上传、解析、切片、向量化、检索、重排、多轮对话、会话记忆”串成了一条完整链路，目标不是只做一个 Demo，而是尽量接近真实业务里的知识库问答系统。
+基于 **Spring Boot 3 + Spring AI + Vue 3** 的企业级 RAG（检索增强生成）系统，支持文档上传、解析、向量化、检索、重排、多轮对话和会话记忆。
 
-## 项目简介
-
-这个项目面向的核心场景是：
-
-- 企业内部知识库问答
-- 多格式资料统一接入与检索
-- 基于文档上下文的 AI 对话
-- 支持多轮会话、历史上下文和用户画像的智能助理
-
-系统支持文件上传后自动进入异步处理流程，完成文档解析、结构化切片、向量存储和索引构建；用户在聊天时，系统会结合知识库检索结果和会话上下文生成更可靠的回答。
-
-## 核心亮点
-
-### 1. 不是“只接模型”，而是完整的 RAG 工程链路
-
-项目覆盖了一个 RAG 系统从数据进入到答案生成的主要环节：
-
-- 文件上传与去重
-- 文档解析与结构化抽取
-- 文本切片与分层摘要
-- Redis 向量检索
-- Rerank 精排
-- 多轮对话与会话管理
-- 用户画像与长期偏好沉淀
-
-相比只做单轮问答接口，这个项目更像一个可持续演进的知识服务后端。
-
-### 2. 支持多格式文档与媒体内容接入
-
-系统不仅面向纯文本，还支持多种企业资料形态：
-
-- PDF
-- Word
-- PowerPoint
-- Excel / 表格类文件
-- 图片
-- 音视频
-
-解析层采用云端高质量解析能力与本地兜底机制组合，尽量兼顾效果和稳定性。
-
-### 3. 层级索引设计，提升复杂文档检索质量
-
-项目并不是简单地把长文按固定长度切碎，而是引入了层级化索引思路：
-
-- 叶子切片保存细粒度原文
-- 章节摘要保留局部语义
-- 文档摘要提供全局主题信息
-
-这种结构更适合长文档、章节型材料、培训资料、制度文档这类内容，能减少“召回到片段但看不懂全局”的问题。
-
-### 4. 会话记忆做了工程化增强
-
-项目近期新增了自定义聊天记忆实现 `SummaryWindowChatMemory`，不再只保留最近几轮消息，而是采用“三层记忆”：
-
-- 完整历史：完整保存所有对话
-- 摘要记忆：把旧消息压缩成可注入模型的摘要
-- 窗口记忆：保留最近若干条消息供模型直接消费
-
-这样既能控制上下文长度，又不会像传统滑动窗口那样把早期对话永久丢掉。对长对话、连续追问、用户偏好保留都更友好。
-
-### 5. 异步处理链路更适合真实上传场景
-
-文件处理通过 `RabbitMQ` 异步消费，避免用户上传后长时间阻塞请求线程。
-配合 `MinIO`、分片上传、SHA-256 去重机制，系统对大文件、重复文件和批量文件场景都有更好的容错与吞吐表现。
-
-### 6. 前后端分离，便于继续扩展
-
-后端负责知识处理和 AI 能力编排，前端使用 `Vue 3 + Vite` 构建，后续无论接管理后台、聊天工作台还是业务系统内嵌页面，都比较容易继续演进。
-
-## 功能概览
-
-### 知识库能力
-
-- 单文件上传
-- 批量上传
-- 大文件分片上传与合并
-- 文件去重校验
-- 文档列表分页查询
-- 文档异步删除与状态跟踪
-
-### AI 对话能力
-
-- 基于知识库的问答
-- 多轮会话管理
-- 会话创建、查询、删除
-- 查询改写
-- 用户画像提炼
-- 长对话摘要记忆
-
-### 数据处理能力
-
-- 多格式内容解析
-- Token 级切片控制
-- 向量化存储
-- 向量召回 + Rerank 精排
-- 层级摘要与层级索引
+---
 
 ## 技术栈
 
 | 层级 | 技术方案 |
-| --- | --- |
-| 后端 | Spring Boot 3.3.5 |
-| AI 编排 | Spring AI 1.0.0 |
-| 模型服务 | 阿里云 DashScope |
-| 向量存储 | Redis Vector Store |
-| 关系数据库 | MySQL + MyBatis-Plus |
-| 消息队列 | RabbitMQ |
+|------|----------|
+| 后端 | Spring Boot 3.5 + Java 21 |
+| AI 编排 | Spring AI 1.1.8 + Spring AI Alibaba 1.1.2.3 |
+| 模型服务 | 阿里云 DashScope（qwen-plus / text-embedding-v3） |
+| 向量存储 | Milvus 2.5 |
+| 关系数据库 | MySQL 8.x + MyBatis-Plus |
+| 缓存 | Redis 7.x |
+| 消息队列 | RabbitMQ 3.x |
 | 对象存储 | MinIO |
 | 文档解析 | MinerU + Apache Tika + Apache POI |
 | 音视频处理 | JavaCV + 阿里云 ASR |
 | 认证鉴权 | Sa-Token |
-| 前端 | Vue 3 + Vite + Pinia + Vue Router + Tailwind CSS |
+| 前端 | Vue 3 + Vite 8 + Pinia + Vue Router + Tailwind CSS |
 
-## 系统流程
+---
 
-```text
-用户上传文件
-  -> 文件去重校验
-  -> MinIO / 临时分片存储
-  -> RabbitMQ 异步处理
-  -> 文档解析与切片
-  -> 向量化写入 Redis
-  -> 构建层级索引
+## 系统架构
 
-用户发起对话
-  -> 会话上下文读取
-  -> 查询改写
-  -> 向量召回
-  -> Rerank 精排
-  -> 拼装上下文
-  -> 大模型生成答案
-  -> 更新窗口记忆 / 完整历史 / 摘要记忆
+```
+用户浏览器
+   │
+   ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Vue 3 前端  :5173（开发） / Nginx :80（生产）               │
+└──────────────────────────────────────────────────────────────┘
+   │
+   ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Spring Boot 后端  :8080                                     │
+│                                                              │
+│  ┌────────┐ ┌────────┐ ┌────────────┐ ┌────────┐           │
+│  │ MySQL  │ │ Redis  │ │  Milvus    │ │ MinIO  │           │
+│  │ :3306  │ │ :6379  │ │  :19530    │ │ :9000  │           │
+│  └────────┘ └────────┘ └────────────┘ └────────┘           │
+│  ┌──────────────────────┐                                    │
+│  │  RabbitMQ  :5672     │                                    │
+│  └──────────────────────┘                                    │
+└──────────────────────────────────────────────────────────────┘
+                      ▲
+                      │ DashScope API / MinerU API
+                      ▼
+               阿里云 AI 服务
 ```
 
-## 项目结构
+---
 
-```text
-frontend/                    前端项目（Vue 3 + Vite）
-src/main/java/com/example/demo
-├─ Config/                   配置与基础设施
-├─ Controller/               接口层
-├─ mapper/                   MyBatis Mapper
-├─ model/                    实体与 DTO
-├─ service/                  核心业务服务
-│  └─ processor/             各类文件处理器
-└─ util/                     工具类
+## 快速开始（本地部署）
 
-src/main/resources/          应用配置
-docs/                        设计说明与开发文档
-```
+### 1. 环境要求
 
-## 为什么这个项目值得看
+| 工具 | 最低版本 |
+|------|----------|
+| JDK | 21 |
+| Maven | 3.9+ |
+| Node.js | 18+ |
+| npm | 8+ |
+| Docker | 20+（用于启动中间件） |
 
-如果你只是想找一个“调用大模型 API”的例子，这个项目可能有点重。
-但如果你想看一个更接近真实生产思路的 RAG 系统，它有几个很值得参考的点：
-
-- 有完整的数据接入、处理、检索、问答闭环
-- 考虑了异步处理、批量写入、去重、分片上传这些工程问题
-- 不只是“问一次答一次”，而是有多轮会话和记忆管理
-- 不只支持纯文本，而是覆盖企业常见资料格式
-- 架构拆分比较清晰，便于继续扩展
-
-## 快速启动
-
-### 1. 环境准备
-
-建议准备以下依赖：
-
-- JDK 17
-- Maven 3.9+
-- MySQL 8
-- Redis
-- RabbitMQ
-- MinIO
-- Node.js 18+
-
-### 2. 后端启动
+### 2. 启动中间件（Docker 一键启动）
 
 ```bash
-mvn clean package
-mvn spring-boot:run
+# MySQL
+docker run -d --name mysql \
+  -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD=nm561234789 \
+  -e MYSQL_DATABASE=rag_knowledge \
+  mysql:8.0
+
+# Redis
+docker run -d --name redis \
+  -p 6379:6379 \
+  redis:7-alpine
+
+# Milvus（Standalone 模式，内置 etcd + minio）
+docker run -d --name milvus-standalone \
+  -p 19530:19530 -p 9091:9091 \
+  milvusdb/milvus:v2.5.13 milvus run standalone
+
+# RabbitMQ（带管理界面）
+docker run -d --name rabbitmq \
+  -p 5672:5672 -p 15672:15672 \
+  rabbitmq:3-management-alpine
+
+# MinIO（应用对象存储）
+docker run -d --name minio \
+  -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio server /data --console-address ":9001"
 ```
 
-默认配置位于 `src/main/resources/application.yaml`。
-在正式部署前，建议将数据库、Redis、对象存储、模型服务等配置改为你自己的环境参数，并通过环境变量或外部配置文件管理敏感信息。
+> **注意**：Milvus Standalone 镜像内置了 etcd 和 MinIO，无需额外启动。如果本地已有同端口服务，请调整端口映射。
 
-### 3. 前端启动
+### 3. 创建数据库并导入表结构
+
+```bash
+# 创建数据库
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS rag_knowledge DEFAULT CHARACTER SET utf8mb4;"
+
+# 导入建表 SQL
+mysql -u root -p rag_knowledge < sql/schema.sql
+```
+
+SQL 文件位于项目根目录 `sql/` 下：
+
+```
+sql/
+├── schema.sql                 # 主表结构（首次部署执行）
+├── V2__add_auth_user_email.sql # Flyway 增量迁移
+├── reset_remote.sql           # 远程数据库重置脚本
+└── temp_reset_rag.sql         # 临时 RAG 数据重置脚本
+```
+
+> **注意**：如果已有数据库且表结构存在，Flyway 会以 Baseline 方式接入，无需重复导入。首次部署请先执行 `schema.sql`。
+
+### 4. 配置 API Key
+
+编辑 `src/main/resources/application.yaml`，将占位符替换为真实值：
+
+```yaml
+spring:
+  ai:
+    dashscope:
+      api-key: 你的DashScope API Key          # 必填，用于 LLM 对话 + Embedding
+
+mineru:
+  api-key: 你的MinerU JWT Token               # 可选，用于 PDF/Word/Excel/PPT 高质量解析
+
+aliyun:
+  asr:                                         # 可选，用于语音识别
+    access-key-id:     你的阿里云AK
+    access-key-secret: 你的阿里云SK
+    app-key:           你的ASR AppKey
+```
+
+**DashScope API Key 获取**：https://dashscope.console.aliyun.com/ → API Key 管理
+
+### 5. 修改数据库密码（如果与默认不同）
+
+```yaml
+# application.yaml
+spring:
+  datasource:
+    password: ${DB_PASSWORD:你的MySQL密码}
+```
+
+### 6. 启动后端
+
+```bash
+cd demo
+mvn spring-boot:run -DskipTests
+```
+
+后端运行在 **http://localhost:8080**，健康检查：
+
+```bash
+curl http://localhost:8080/actuator/health
+# 返回 {"status":"UP"} 表示启动成功
+```
+
+### 7. 启动前端
 
 ```bash
 cd frontend
@@ -197,29 +175,147 @@ npm install
 npm run dev
 ```
 
-生产构建：
+前端运行在 **http://localhost:5173**
+
+### 8. 访问系统
+
+浏览器打开 http://localhost:5173，注册账号后即可使用。
+
+---
+
+## 服务器部署
+
+### 后端打包
+
+```bash
+mvn clean package -DskipTests
+# 产出 target/demo-0.0.1-SNAPSHOT.jar
+```
+
+### 前端打包
 
 ```bash
 cd frontend
 npm run build
+# 产出 frontend/dist/
 ```
 
-## 适用场景
+### 后端启动（生产环境）
 
-- 企业知识助手
-- 内部制度 / 文档检索平台
-- 培训资料问答系统
-- 客服知识库底座
-- 多文档 AI 阅读与问答平台
+```bash
+nohup java -jar target/demo-0.0.1-SNAPSHOT.jar \
+  --spring.datasource.password=你的MySQL密码 \
+  --spring.ai.dashscope.api-key=你的DashScope Key \
+  > app.log 2>&1 &
+```
 
-## 后续可继续增强的方向
+也可通过环境变量注入：
 
-- 检索状态与文档处理进度可视化
-- 用户画像可查看、可编辑、可重置
-- 更细粒度的权限与文档空间隔离
-- 更灵活的检索策略切换
-- 更完善的监控、审计与失败补偿机制
+```bash
+export DB_PASSWORD=你的MySQL密码
+export DASHSCOPE_API_KEY=你的DashScope Key
+export REDIS_PASSWORD=你的Redis密码
+export RABBITMQ_PASSWORD=你的RabbitMQ密码
+export MINIO_SECRET_KEY=你的MinIO密码
+
+java -jar target/demo-0.0.1-SNAPSHOT.jar
+```
+
+### Nginx 配置（前端 + 反向代理）
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    # 前端静态文件
+    location / {
+        root /path/to/frontend/dist;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 后端 API 代理
+    location /api/ {
+        proxy_pass http://localhost:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+### 服务器端口一览
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| Nginx | 80 / 443 | 前端静态文件 + 反向代理 |
+| Spring Boot | 8080 | 后端 API |
+| MySQL | 3306 | 关系数据库 |
+| Redis | 6379 | 缓存 + 会话记忆 |
+| Milvus | 19530 | 向量数据库 |
+| RabbitMQ | 5672 / 15672 | 消息队列 / 管理界面 |
+| MinIO | 9000 / 9001 | 对象存储 / 管理界面 |
+
+---
+
+## 环境变量汇总
+
+| 变量 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `DASHSCOPE_API_KEY` | ✅ | — | DashScope API Key（对话 + Embedding） |
+| `DB_PASSWORD` | ✅ | — | MySQL root 密码 |
+| `MINERU_API_KEY` | ❌ | — | MinerU 文档解析 Token |
+| `ALIYUN_ASR_ACCESS_KEY_ID` | ❌ | — | 阿里云语音识别 AK |
+| `ALIYUN_ASR_ACCESS_KEY_SECRET` | ❌ | — | 阿里云语音识别 SK |
+| `ALIYUN_ASR_APP_KEY` | ❌ | — | 阿里云语音识别 AppKey |
+| `BAIDU_MAP_AK` | ❌ | — | 百度地图 MCP |
+| `REDIS_PASSWORD` | ❌ | 空 | Redis 密码（Docker 默认无密码） |
+| `RABBITMQ_PASSWORD` | ❌ | guest | RabbitMQ 密码 |
+| `MINIO_SECRET_KEY` | ❌ | minioadmin | MinIO 密钥 |
+
+---
+
+## 常见问题
+
+| 问题 | 原因 | 解决 |
+|------|------|------|
+| `InvalidApiKey` | DashScope Key 未设置或已过期 | 设置 `DASHSCOPE_API_KEY` 环境变量 |
+| `Access denied for user 'root'` | MySQL 密码错误或 IP 未授权 | 检查 `DB_PASSWORD`，确认 MySQL 允许该 IP 访问 |
+| `SignatureDoesNotMatch` (MinIO) | access-key / secret-key 不匹配 | 检查 MinIO 凭据，或重启 MinIO 容器 |
+| Milvus 连接超时 | Milvus 容器未启动 | `docker start milvus-standalone`，等待 30 秒 |
+| Flyway 迁移失败 | 数据库表结构冲突 | 执行 `mvn flyway:repair` 或重建数据库 |
+| 前端白屏 | 后端未启动或 CORS 配置错误 | 确认后端已启动，检查浏览器控制台 |
+| 端口被占用 | 其他进程占用端口 | 用 `netstat -ano \| findstr :端口号` 查找并关闭 |
+
+---
+
+## 项目结构
+
+```
+demo/
+├── src/main/java/com/example/demo/
+│   ├── Config/              # 配置类（Milvus、CORS、SaToken、RateLimit 等）
+│   ├── Controller/          # REST 接口（AI、Auth、Upload、Document、Chunk）
+│   ├── mapper/              # MyBatis Mapper
+│   ├── model/               # 实体与 DTO
+│   ├── service/             # 核心业务服务
+│   │   ├── ai/              # AI 相关（Chat、Embedding、Rerank）
+│   │   ├── agent/           # Agent 编排（Plan-Execute、ReAct）
+│   │   └── processor/       # 各类文件处理器
+│   └── util/                # 工具类
+├── src/main/resources/
+│   ├── application.yaml     # 主配置文件
+│   └── db/migration/        # Flyway SQL 迁移脚本
+├── frontend/                # Vue 3 前端项目
+│   ├── src/
+│   ├── package.json
+│   └── vite.config.js
+└── pom.xml
+```
+
+---
 
 ## License
 
-如需开源发布，建议补充明确的 License 文件；当前仓库尚未声明正式许可证。
+内部项目，未声明正式许可证。

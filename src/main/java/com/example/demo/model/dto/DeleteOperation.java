@@ -19,7 +19,7 @@ public class DeleteOperation {
      * 操作步骤
      */
     public enum Step {
-        VECTOR_STORE_DELETE,  // Redis向量存储删除
+        VECTOR_STORE_DELETE,  // 向量库删除
         MYSQL_DELETE,         // MySQL数据库删除
         MINIO_DELETE         // MinIO文件删除
     }

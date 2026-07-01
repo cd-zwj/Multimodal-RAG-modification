@@ -30,7 +30,7 @@ public class DeleteTaskStatus {
     private OverallStatus status;
 
     /**
-     * Redis删除状态
+     * 向量库删除状态。字段名保留 redisStatus 以兼容旧前端响应。
      */
     private String redisStatus;
 
@@ -101,7 +101,7 @@ public class DeleteTaskStatus {
 
         StringBuilder errorMsg = new StringBuilder();
         if (task.getRedisStatus() == FileDeleteTask.StepStatus.FAILED) {
-            errorMsg.append("Redis删除失败; ");
+            errorMsg.append("向量库删除失败; ");
         }
         if (task.getMysqlStatus() == FileDeleteTask.StepStatus.FAILED) {
             errorMsg.append("MySQL删除失败; ");

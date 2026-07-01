@@ -22,7 +22,7 @@ public class SaTokenConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(rateLimitInterceptor)
-                .addPathPatterns("/auth/login", "/auth/register", "/auth/password/forgot/request");
+                .addPathPatterns("/auth/login", "/auth/register", "/auth/password/forgot/request", "/ai/multi-turn/chat");
 
         registry.addInterceptor(new SaInterceptor(handle -> StpUtil.checkLogin()) {
             @Override

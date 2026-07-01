@@ -14,6 +14,7 @@ import com.example.demo.service.QueryRewriteService;
 import com.example.demo.service.RagRetrievalService;
 import com.example.demo.service.RetrievalSubQueryService;
 import com.example.demo.service.UserProfileService;
+import com.example.demo.service.agent.AgentOrchestrator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -63,6 +64,9 @@ class AiControllerTest {
 
     @Mock
     private AsrService asrService;
+
+    @Mock
+    private AgentOrchestrator agentOrchestrator;
 
     @Test
     void shouldUseRewrittenQueryAsPrimaryAndOriginalQueryAsSupplementaryRecall() {
@@ -206,6 +210,33 @@ class AiControllerTest {
         assertEquals("执行这个计划", captured.getMessage());
         assertEquals(AgentMode.PLAN_EXECUTE, captured.getModeHint());
         assertEquals("plan-1", captured.getApprovedPlanId());
+    }
+
+    @Test
+    void shouldReturnSseFallbackWhenMultiTurnChatStreamFails() {
+        MultiTurnChatRequest request = new MultiTurnChatRequest();
+        request.setUserId("u1");
+        request.setSessionId("s1");
+        request.setMessage("总结文档");
+
+        when(agentOrchestrator.chat(request)).thenReturn(Flux.error(new RuntimeException("llm down")));
+
+        AiService aiService = new AiService(
+                deepchatClient,
+                ragRetrievalService,
+                queryRewriteService,
+                retrievalSubQueryService,
+                userProfileService,
+                dateTimeTools,
+                chatSessionService,
+                agentOrchestrator
+        );
+
+        List<ServerSentEvent<String>> events = aiService.multiTurnChat(request).collectList().block();
+
+        assertEquals("error", events.get(0).event());
+        assertEquals("AI 服务暂时不可用，请稍后重试", events.get(0).data());
+        assertEquals("done", events.get(1).event());
     }
 
     @SuppressWarnings("unchecked")
