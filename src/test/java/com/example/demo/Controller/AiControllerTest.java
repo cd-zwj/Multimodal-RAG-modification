@@ -195,6 +195,7 @@ class AiControllerTest {
         request.setMessage("执行这个计划");
         request.setModeHint(AgentMode.PLAN_EXECUTE);
         request.setApprovedPlanId("plan-1");
+        request.setProviderCode("custom-openai");
 
         when(authContextService.resolveUserId("client-user")).thenReturn("u1");
         when(aiService.multiTurnChat(org.mockito.ArgumentMatchers.any(MultiTurnChatRequest.class)))
@@ -210,6 +211,7 @@ class AiControllerTest {
         assertEquals("执行这个计划", captured.getMessage());
         assertEquals(AgentMode.PLAN_EXECUTE, captured.getModeHint());
         assertEquals("plan-1", captured.getApprovedPlanId());
+        assertEquals("custom-openai", captured.getProviderCode());
     }
 
     @Test
@@ -237,6 +239,56 @@ class AiControllerTest {
         assertEquals("error", events.get(0).event());
         assertEquals("AI 服务暂时不可用，请稍后重试", events.get(0).data());
         assertEquals("done", events.get(1).event());
+    }
+
+
+    @Test
+    void shouldUseSelectedCustomProviderForReactChat() {
+        MultiTurnChatRequest request = new MultiTurnChatRequest();
+        request.setSessionId("s1");
+        request.setUserId("u1");
+        request.setMessage("总结文档");
+        request.setProviderCode("custom-openai");
+
+        com.example.demo.service.llm.LlmProviderRegistry registry = org.mockito.Mockito.mock(com.example.demo.service.llm.LlmProviderRegistry.class);
+        com.example.demo.service.llm.HttpLlmDebugClient debugClient = org.mockito.Mockito.mock(com.example.demo.service.llm.HttpLlmDebugClient.class);
+        com.example.demo.service.llm.RuntimeLlmProvider provider = com.example.demo.service.llm.RuntimeLlmProvider.builder()
+                .providerCode("custom-openai")
+                .defaultModel("gpt-test")
+                .build();
+        com.example.demo.model.dto.llm.LlmDebugResponse response = new com.example.demo.model.dto.llm.LlmDebugResponse();
+        response.setSuccess(true);
+        response.setParsedContent("自定义模型回答");
+
+        when(queryRewriteService.rewrite("s1", "总结文档")).thenReturn("总结文档");
+        when(retrievalSubQueryService.generateSubQueries("总结文档", "总结文档")).thenReturn(List.of("总结文档"));
+        when(ragRetrievalService.retrieveWithMultiPathRecall(eq("总结文档"), anyList(), eq("u1")))
+                .thenReturn(RetrievalResult.empty(0));
+        when(userProfileService.getProfile("u1")).thenReturn(null);
+        when(registry.getRequired("custom-openai")).thenReturn(provider);
+        when(debugClient.debug(eq(provider), org.mockito.ArgumentMatchers.any())).thenReturn(response);
+
+        com.example.demo.service.agent.ReactAgentExecutor executor = new com.example.demo.service.agent.ReactAgentExecutor(
+                deepchatClient,
+                ragRetrievalService,
+                queryRewriteService,
+                retrievalSubQueryService,
+                userProfileService,
+                dateTimeTools,
+                null,
+                null,
+                registry,
+                debugClient
+        );
+
+        List<ServerSentEvent<String>> events = executor.execute(request, "u1").collectList().block();
+
+        assertEquals("citations", events.get(0).event());
+        assertEquals("token", events.get(1).event());
+        assertEquals("自定义模型回答", events.get(1).data());
+        assertEquals("done", events.get(2).event());
+        verify(registry).getRequired("custom-openai");
+        verify(deepchatClient, org.mockito.Mockito.never()).prompt();
     }
 
     @SuppressWarnings("unchecked")

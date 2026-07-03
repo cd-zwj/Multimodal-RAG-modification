@@ -86,16 +86,17 @@ public class PlanExecuteAgentExecutor {
             );
         }
 
-        MultiTurnChatRequest executeRequest = new MultiTurnChatRequest(
-                request.getUserId(),
-                request.getSessionId(),
-                request.getTurnCount(),
-                buildExecutionMessage(request, plan),
-                request.getModeHint(),
-                request.getApprovedPlanId(),
-                request.getScenario(),
-                request.getBizContext()
-        );
+        MultiTurnChatRequest executeRequest = new MultiTurnChatRequest();
+        executeRequest.setUserId(request.getUserId());
+        executeRequest.setSessionId(request.getSessionId());
+        executeRequest.setTurnCount(request.getTurnCount());
+        executeRequest.setMessage(buildExecutionMessage(request, plan));
+        executeRequest.setModeHint(request.getModeHint());
+        executeRequest.setApprovedPlanId(request.getApprovedPlanId());
+        executeRequest.setProviderCode(request.getProviderCode());
+        executeRequest.setModelCode(request.getModelCode());
+        executeRequest.setScenario(request.getScenario());
+        executeRequest.setBizContext(request.getBizContext());
         return reactAgentExecutor.execute(executeRequest, userId);
     }
 
@@ -179,4 +180,3 @@ public class PlanExecuteAgentExecutor {
         private String planText;
     }
 }
-

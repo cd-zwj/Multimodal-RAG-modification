@@ -37,9 +37,14 @@ public class MultiTurnChatRequest {
     @Size(max = 128, message = "计划ID长度不能超过128个字符")
     private String approvedPlanId;
 
+    @Size(max = 64, message = "Provider 编码长度不能超过64个字符")
+    private String providerCode;
+
+    @Size(max = 64, message = "模型编码长度不能超过64个字符")
+    private String modelCode;
+
     private AiScenario scenario = AiScenario.GENERAL_CHAT;
 
     @Size(max = 32, message = "业务上下文字段不能超过32个")
     private Map<String, Object> bizContext;
 }
-

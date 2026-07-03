@@ -67,6 +67,55 @@ export const ai = {
   }
 }
 
+export const llm = {
+  listProviders: (params = {}) => API.get('/llm/providers', { params }),
+  createProvider: (payload) => API.post('/llm/providers', payload),
+  updateProvider: (id, payload) => API.put(`/llm/providers/${id}`, payload),
+  enableProvider: (id) => API.post(`/llm/providers/${id}/enable`),
+  disableProvider: (id) => API.post(`/llm/providers/${id}/disable`),
+  deleteProvider: (id) => API.delete(`/llm/providers/${id}`),
+  listModels: (params = {}) => API.get('/llm/models', { params }),
+  createModel: (payload) => API.post('/llm/models', payload),
+  updateModel: (id, payload) => API.put(`/llm/models/${id}`, payload),
+  enableModel: (id) => API.post(`/llm/models/${id}/enable`),
+  disableModel: (id) => API.post(`/llm/models/${id}/disable`),
+  deleteModel: (id) => API.delete(`/llm/models/${id}`),
+  debugProvider: (payload) => API.post('/llm/debug', payload),
+  debugProviderStream: async (payload, onEvent) => {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`${API.defaults.baseURL || ''}/llm/debug/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { satoken: token } : {})
+      },
+      body: JSON.stringify(payload)
+    })
+    if (!response.ok || !response.body) {
+      throw new Error(`流式调试失败：${response.status}`)
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const events = buffer.split(/\r?\n\r?\n/)
+      buffer = events.pop() || ''
+      events.forEach(block => {
+        const eventName = block.match(/^event:\s*(.+)$/m)?.[1] || 'message'
+        const data = block
+          .split(/\r?\n/)
+          .filter(line => line.startsWith('data:'))
+          .map(line => line.slice(5).trimStart())
+          .join('\n')
+        onEvent?.({ event: eventName, data })
+      })
+    }
+  }
+}
+
 export const documents = {
   list: (params) => API.get('/api/documents', { params }),
   getStatus: (fileHash, userId) => API.get(`/api/documents/status/${fileHash}`, { params: { userId } }),

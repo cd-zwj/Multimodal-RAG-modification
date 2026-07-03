@@ -1,0 +1,61 @@
+CREATE TABLE IF NOT EXISTS llm_provider_config (
+    id VARCHAR(36) PRIMARY KEY COMMENT '主键ID',
+    provider_code VARCHAR(64) NOT NULL COMMENT 'Provider编码',
+    provider_name VARCHAR(128) NOT NULL COMMENT 'Provider名称',
+    protocol_type VARCHAR(32) NOT NULL COMMENT '协议类型',
+    auth_type VARCHAR(32) NOT NULL COMMENT '鉴权类型',
+    endpoint_url VARCHAR(512) NOT NULL COMMENT '接口地址',
+    api_key_ciphertext TEXT NOT NULL COMMENT '加密后的API Key',
+    default_model VARCHAR(128) NOT NULL COMMENT '默认模型',
+    default_headers_json TEXT NULL COMMENT '默认请求头JSON',
+    request_template_json TEXT NULL COMMENT '请求模板JSON',
+    response_mapping_json TEXT NULL COMMENT '响应映射JSON',
+    stream_config_json TEXT NULL COMMENT '流式配置JSON',
+    connect_timeout_ms INT NOT NULL DEFAULT 5000 COMMENT '连接超时毫秒',
+    read_timeout_ms INT NOT NULL DEFAULT 30000 COMMENT '读取超时毫秒',
+    version INT NOT NULL DEFAULT 1 COMMENT '版本号',
+    remark VARCHAR(1000) NULL COMMENT '备注',
+    status VARCHAR(32) NOT NULL DEFAULT 'DISABLED' COMMENT '启停状态',
+    created_by VARCHAR(36) NULL COMMENT '创建人',
+    updated_by VARCHAR(36) NULL COMMENT '更新人',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_llm_provider_code (provider_code),
+    INDEX idx_llm_provider_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='LLM Provider 配置表';
+
+CREATE TABLE IF NOT EXISTS llm_model_config (
+    id VARCHAR(36) PRIMARY KEY COMMENT '主键ID',
+    provider_id VARCHAR(36) NOT NULL COMMENT 'Provider主键',
+    model_code VARCHAR(64) NOT NULL COMMENT '模型编码',
+    display_name VARCHAR(128) NOT NULL COMMENT '展示名称',
+    remote_model_name VARCHAR(128) NOT NULL COMMENT '远端模型名',
+    default_params_json TEXT NULL COMMENT '默认参数JSON',
+    capabilities_json TEXT NULL COMMENT '能力标签JSON',
+    status VARCHAR(32) NOT NULL DEFAULT 'ENABLED' COMMENT '启停状态',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT '排序',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_llm_model_code (model_code),
+    INDEX idx_llm_model_provider_id (provider_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='LLM 模型配置表';
+
+CREATE TABLE IF NOT EXISTS llm_debug_session (
+    id VARCHAR(36) PRIMARY KEY COMMENT '主键ID',
+    provider_id VARCHAR(36) NOT NULL COMMENT 'Provider主键',
+    provider_code VARCHAR(64) NOT NULL COMMENT 'Provider编码',
+    debug_request_json TEXT NULL COMMENT '原始调试请求',
+    resolved_request_json TEXT NULL COMMENT '渲染后的最终请求',
+    masked_headers_json TEXT NULL COMMENT '脱敏后的请求头',
+    raw_response_text LONGTEXT NULL COMMENT '原始响应文本',
+    parsed_response_json LONGTEXT NULL COMMENT '解析后的响应',
+    http_status INT NULL COMMENT 'HTTP状态码',
+    latency_ms BIGINT NULL COMMENT '耗时毫秒',
+    success TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否成功',
+    error_code VARCHAR(64) NULL COMMENT '错误分类',
+    error_message VARCHAR(1000) NULL COMMENT '错误消息',
+    created_by VARCHAR(36) NULL COMMENT '调试人',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX idx_llm_debug_provider_code (provider_code),
+    INDEX idx_llm_debug_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='LLM 在线调试记录表';

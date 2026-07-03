@@ -143,7 +143,20 @@
               :disabled="streaming"
             ></textarea>
             <div class="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between mt-2 px-2 pb-1">
-              <div class="flex items-center gap-sm min-w-0">
+              <div class="flex items-center gap-sm min-w-0 flex-wrap">
+                <label class="flex items-center gap-xs min-w-0" title="选择本次对话使用的模型">
+                  <span class="material-symbols-outlined text-[18px] text-outline">psychology</span>
+                  <select
+                    v-model="selectedModelCode"
+                    :disabled="streaming"
+                    class="model-select"
+                  >
+                    <option value="">系统默认模型</option>
+                    <option v-for="model in chatModels" :key="model.modelCode" :value="model.modelCode">
+                      {{ model.displayName }} / {{ model.providerName }}
+                    </option>
+                  </select>
+                </label>
                 <div class="inline-flex items-center bg-surface-container rounded-md p-0.5 border border-outline-variant">
                   <button
                     v-for="option in agentModeOptions"
@@ -287,7 +300,7 @@ import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { useAuthStore } from '../store/auth'
-import { ai, documents } from '../api'
+import { ai, documents, llm } from '../api'
 
 const props = defineProps({
   newSessionTrigger: {
@@ -312,6 +325,8 @@ const knowledgeBanner = ref(null)
 const documentStatusMap = ref(new Map())
 const selectedAgentMode = ref('AUTO')
 const lastRouteDecision = ref(null)
+const chatModels = ref([])
+const selectedModelCode = ref('')
 let knowledgePollTimer = null
 
 const agentModeOptions = [
@@ -492,6 +507,7 @@ const handleBeforeUnload = () => {
 
 onMounted(() => {
   loadSessions()
+  loadChatModels()
   refreshKnowledgeStatus()
   knowledgePollTimer = setInterval(() => {
     refreshKnowledgeStatus()
@@ -509,6 +525,16 @@ onUnmounted(() => {
   }
 })
 
+const loadChatModels = async () => {
+  try {
+    const res = await llm.listModels()
+    if (res.code === 200) {
+      chatModels.value = res.data || []
+    }
+  } catch (err) {
+    console.error('获取模型列表失败:', err)
+  }
+}
 const loadSessions = async () => {
   try {
     const res = await ai.listSessions(authStore.userId)
@@ -626,7 +652,8 @@ const streamChatResponse = async ({ userQuery, aiMessageIndex, approvedPlanId })
         turnCount: chatMessages.value.length - 1,
         message: userQuery,
         modeHint: selectedAgentMode.value,
-        approvedPlanId
+        approvedPlanId,
+        modelCode: selectedModelCode.value || null
       })
     })
 
@@ -980,3 +1007,22 @@ const refreshKnowledgeStatus = async () => {
   }
 }
 </script>
+
+<style scoped>
+.model-select {
+  max-width: 14rem;
+  min-width: 9rem;
+  border: 1px solid rgb(var(--tw-colors-outline-variant));
+  border-radius: 0.375rem;
+  background: rgb(var(--tw-colors-surface-container));
+  padding: 0.25rem 0.5rem;
+  color: rgb(var(--tw-colors-on-surface-variant));
+  font-size: 0.75rem;
+  line-height: 1rem;
+  outline: none;
+}
+
+.model-select:focus {
+  border-color: rgb(var(--tw-colors-primary));
+}
+</style>

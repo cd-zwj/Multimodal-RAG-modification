@@ -19,6 +19,7 @@ public final class AuthSeedProperties {
             "ai:session:history",
             "ai:session:extract-profile",
             "ai:multi-turn:chat",
+            "llm:debug",
             "document:list",
             "document:status",
             "document:delete",
@@ -32,6 +33,16 @@ public final class AuthSeedProperties {
     );
 
     public static final List<String> ADMIN_EXTRA_PERMISSIONS = List.of(
+            "llm:provider:create",
+            "llm:provider:update",
+            "llm:provider:enable",
+            "llm:provider:disable",
+            "llm:provider:delete",
+            "llm:model:create",
+            "llm:model:update",
+            "llm:model:enable",
+            "llm:model:disable",
+            "llm:model:delete",
             "user:manage",
             "user:password:reset"
     );

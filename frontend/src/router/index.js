@@ -4,6 +4,7 @@ import Layout from '../views/Layout.vue'
 import Chat from '../views/Chat.vue'
 import Documents from '../views/Documents.vue'
 import Profile from '../views/Profile.vue'
+import LlmProviderAdmin from '../views/LlmProviderAdmin.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import ForgotPassword from '../views/ForgotPassword.vue'
@@ -46,6 +47,11 @@ const routes = [
         path: 'profile',
         name: 'Profile',
         component: Profile
+      },
+      {
+        path: 'llm',
+        name: 'LlmProviderAdmin',
+        component: LlmProviderAdmin
       }
     ]
   },
@@ -70,6 +76,12 @@ router.beforeEach(async (to, from, next) => {
   if (to.matched.some(record => record.meta.requiresAuth)) {
     if (!authStore.isAuthenticated) {
       next({ name: 'Login' })
+    } else if (
+      to.name === 'LlmProviderAdmin' &&
+      !authStore.isAdmin &&
+      !authStore.permissions.includes('llm:debug')
+    ) {
+      next({ name: 'Chat' })
     } else {
       next()
     }

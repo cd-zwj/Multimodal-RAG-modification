@@ -62,6 +62,16 @@
           <span class="material-symbols-outlined text-[20px]">account_circle</span>
           <span class="font-body-sm text-body-sm flex-1">个人中心</span>
         </router-link>
+
+        <router-link
+          v-if="authStore.isAdmin"
+          to="/llm"
+          class="flex items-center gap-sm py-2 px-3 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant font-bold text-left w-full group"
+          exact-active-class="text-primary bg-surface-container border-r-4 border-primary"
+        >
+          <span class="material-symbols-outlined text-[20px]">hub</span>
+          <span class="font-body-sm text-body-sm flex-1">LLM 管理</span>
+        </router-link>
       </div>
 
       <!-- Footer Navigation & Profile -->
@@ -182,6 +192,7 @@ const currentRouteTitle = computed(() => {
   if (route.name === 'Chat') return '智能 AI 对话'
   if (route.name === 'Documents') return '知识库文档管理'
   if (route.name === 'Profile') return '个人中心'
+  if (route.name === 'LlmProviderAdmin') return 'LLM 管理'
   return 'RAG 知识库'
 })
 

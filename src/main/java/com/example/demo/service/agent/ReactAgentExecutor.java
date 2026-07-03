@@ -4,12 +4,17 @@ import com.example.demo.Config.DateTimeTools;
 import com.example.demo.model.dto.HierarchyHit;
 import com.example.demo.model.dto.MultiTurnChatRequest;
 import com.example.demo.model.dto.RetrievalResult;
+import com.example.demo.model.dto.llm.LlmDebugRequest;
+import com.example.demo.model.dto.llm.LlmDebugResponse;
 import com.example.demo.service.QueryRewriteService;
 import com.example.demo.service.RagRetrievalService;
 import com.example.demo.service.RetrievalSubQueryService;
 import com.example.demo.service.UserProfileService;
 import com.example.demo.service.ai.AiScenarioPromptProvider;
 import com.example.demo.service.ai.AiScenarioToolProvider;
+import com.example.demo.service.llm.HttpLlmDebugClient;
+import com.example.demo.service.llm.LlmProviderRegistry;
+import com.example.demo.service.llm.RuntimeLlmProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -39,6 +44,8 @@ public class ReactAgentExecutor {
     private final DateTimeTools dateTimeTools;
     private final AiScenarioPromptProvider aiScenarioPromptProvider;
     private final AiScenarioToolProvider aiScenarioToolProvider;
+    private final LlmProviderRegistry llmProviderRegistry;
+    private final HttpLlmDebugClient httpLlmDebugClient;
 
     @Autowired
     public ReactAgentExecutor(ChatClient deepchatClient,
@@ -48,7 +55,9 @@ public class ReactAgentExecutor {
                               UserProfileService userProfileService,
                               DateTimeTools dateTimeTools,
                               AiScenarioPromptProvider aiScenarioPromptProvider,
-                              AiScenarioToolProvider aiScenarioToolProvider) {
+                              AiScenarioToolProvider aiScenarioToolProvider,
+                              LlmProviderRegistry llmProviderRegistry,
+                              HttpLlmDebugClient httpLlmDebugClient) {
         this.deepchatClient = deepchatClient;
         this.ragRetrievalService = ragRetrievalService;
         this.queryRewriteService = queryRewriteService;
@@ -57,6 +66,8 @@ public class ReactAgentExecutor {
         this.dateTimeTools = dateTimeTools;
         this.aiScenarioPromptProvider = aiScenarioPromptProvider;
         this.aiScenarioToolProvider = aiScenarioToolProvider;
+        this.llmProviderRegistry = llmProviderRegistry;
+        this.httpLlmDebugClient = httpLlmDebugClient;
     }
 
     public ReactAgentExecutor(ChatClient deepchatClient,
@@ -73,6 +84,8 @@ public class ReactAgentExecutor {
         this.dateTimeTools = dateTimeTools;
         this.aiScenarioPromptProvider = null;
         this.aiScenarioToolProvider = null;
+        this.llmProviderRegistry = null;
+        this.httpLlmDebugClient = null;
     }
 
     public Flux<ServerSentEvent<String>> execute(MultiTurnChatRequest request, String userId) {
@@ -91,7 +104,18 @@ public class ReactAgentExecutor {
         String systemPrompt = buildMultiTurnSystemPrompt(userId, result, request);
         ServerSentEvent<String> citationsEvent = AgentSseEvents.event("citations", serializeCitations(result));
 
-        Flux<ServerSentEvent<String>> textFlux = deepchatClient.prompt()
+        Flux<ServerSentEvent<String>> textFlux = hasCustomProvider(request)
+                ? customProviderFlux(request, systemPrompt)
+                : springAiFlux(request, systemPrompt, originalQuery, userId);
+
+        return Flux.concat(Flux.just(citationsEvent), textFlux, Flux.just(AgentSseEvents.done()));
+    }
+
+    private Flux<ServerSentEvent<String>> springAiFlux(MultiTurnChatRequest request,
+                                                       String systemPrompt,
+                                                       String originalQuery,
+                                                       String userId) {
+        return deepchatClient.prompt()
                 .advisors(advisorSpec -> advisorSpec.param(CONVERSATION_ID, request.getSessionId()))
                 .tools(resolveTools(userId, request))
                 .system(systemPrompt)
@@ -99,8 +123,37 @@ public class ReactAgentExecutor {
                 .stream()
                 .content()
                 .map(token -> AgentSseEvents.event("token", token));
+    }
 
-        return Flux.concat(Flux.just(citationsEvent), textFlux, Flux.just(AgentSseEvents.done()));
+    private Flux<ServerSentEvent<String>> customProviderFlux(MultiTurnChatRequest request, String systemPrompt) {
+        return Flux.defer(() -> {
+            RuntimeLlmProvider provider = request.getModelCode() != null && !request.getModelCode().isBlank()
+                    ? llmProviderRegistry.getRequiredByModelCode(request.getModelCode().trim())
+                    : llmProviderRegistry.getRequired(request.getProviderCode().trim());
+            LlmDebugRequest debugRequest = new LlmDebugRequest();
+            debugRequest.setProviderCode(provider.getProviderCode());
+            debugRequest.setMessage(request.getMessage());
+            debugRequest.setSystemPrompt(systemPrompt);
+            debugRequest.setStream(false);
+            debugRequest.setContext(Map.of(
+                    "sessionId", request.getSessionId(),
+                    "mode", "chat"
+            ));
+            LlmDebugResponse response = httpLlmDebugClient.debug(provider, debugRequest);
+            if (!response.isSuccess()) {
+                throw new IllegalStateException(response.getErrorMessage() == null ? "自定义模型调用失败" : response.getErrorMessage());
+            }
+            String content = response.getParsedContent() == null ? "" : response.getParsedContent();
+            return Flux.just(AgentSseEvents.event("token", content));
+        });
+    }
+
+    private boolean hasCustomProvider(MultiTurnChatRequest request) {
+        boolean hasProvider = request.getProviderCode() != null && !request.getProviderCode().isBlank();
+        boolean hasModel = request.getModelCode() != null && !request.getModelCode().isBlank();
+        return (hasProvider || hasModel)
+                && llmProviderRegistry != null
+                && httpLlmDebugClient != null;
     }
 
     private String serializeCitations(RetrievalResult result) {
