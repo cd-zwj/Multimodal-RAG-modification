@@ -81,6 +81,7 @@ export const llm = {
   disableModel: (id) => API.post(`/llm/models/${id}/disable`),
   deleteModel: (id) => API.delete(`/llm/models/${id}`),
   debugProvider: (payload) => API.post('/llm/debug', payload),
+  opsMetrics: () => API.get('/llm/ops/metrics'),
   debugProviderStream: async (payload, onEvent) => {
     const token = localStorage.getItem('token')
     const response = await fetch(`${API.defaults.baseURL || ''}/llm/debug/stream`, {
@@ -120,6 +121,7 @@ export const documents = {
   list: (params) => API.get('/api/documents', { params }),
   getStatus: (fileHash, userId) => API.get(`/api/documents/status/${fileHash}`, { params: { userId } }),
   delete: (fileHash, userId) => API.delete(`/api/documents/${fileHash}`, { params: { userId } }),
+  reprocess: (fileHash, userId) => API.post(`/api/documents/${fileHash}/reprocess`, null, { params: { userId } }),
   getDeleteStatus: (taskId) => API.get(`/api/documents/delete-status/${taskId}`)
 }
 

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -69,6 +70,25 @@ class HttpLlmDebugClientTest {
     }
 
     @Test
+    void shouldRejectPrivateOrLocalEndpointUrls() {
+        HttpLlmDebugClient client = client(false);
+        LlmDebugRequest request = new LlmDebugRequest();
+        request.setMessage("你好");
+
+        for (String url : List.of(
+                "http://localhost:8080/chat",
+                "http://127.0.0.1:8080/chat",
+                "http://10.0.0.1/chat",
+                "http://169.254.169.254/latest/meta-data",
+                "ftp://example.com/chat"
+        )) {
+            RuntimeLlmProvider provider = provider(url);
+            BusinessException error = assertThrows(BusinessException.class, () -> client.debug(provider, request));
+            assertEquals(400, error.getCode());
+        }
+    }
+
+    @Test
     void shouldParseSseEventsForStreamingDebug() throws Exception {
         AtomicReference<String> capturedBody = new AtomicReference<>();
         HttpServer server = startServer(capturedBody, """
@@ -101,14 +121,50 @@ class HttpLlmDebugClientTest {
         }
     }
 
+    @Test
+    void shouldStreamChunksFromRemoteSseResponse() throws Exception {
+        AtomicReference<String> capturedBody = new AtomicReference<>();
+        HttpServer server = startServer(capturedBody, """
+                data: {"choices":[{"delta":{"content":"你"},"finish_reason":null}]}
+
+                data: {"choices":[{"delta":{"content":"好"},"finish_reason":"stop"}]}
+
+                data: [DONE]
+
+                """);
+        try {
+            HttpLlmDebugClient client = client();
+            RuntimeLlmProvider provider = provider("http://localhost:" + server.getAddress().getPort() + "/chat")
+                    .toBuilder()
+                    .responseMappingJson("{\"mode\":\"SSE\",\"streamChunkPath\":\"choices.0.delta.content\",\"finishReasonPath\":\"choices.0.finish_reason\"}")
+                    .capabilitiesJson("{\"chat\":true,\"stream\":true}")
+                    .build();
+            LlmDebugRequest request = new LlmDebugRequest();
+            request.setMessage("你好");
+            request.setStream(true);
+
+            List<String> chunks = client.streamContent(provider, request).collectList().block();
+
+            assertEquals(List.of("你", "好"), chunks);
+            assertTrue(MAPPER.readTree(capturedBody.get()).get("stream").asBoolean());
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private HttpLlmDebugClient client() {
+        return client(true);
+    }
+
+    private HttpLlmDebugClient client(boolean allowPrivateEndpoints) {
         LlmSecretCrypto crypto = mock(LlmSecretCrypto.class);
         when(crypto.mask("sk-test")).thenReturn("****");
         return new HttpLlmDebugClient(
                 MAPPER,
                 new LlmTemplateRenderer(MAPPER),
                 new LlmResponseExtractor(MAPPER),
-                crypto
+                crypto,
+                allowPrivateEndpoints
         );
     }
 

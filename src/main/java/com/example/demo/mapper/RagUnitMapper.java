@@ -60,4 +60,20 @@ public interface RagUnitMapper extends BaseMapper<RagUnit>  {
             @Param("sourceType") String sourceType,
             @Param("keyword") String keyword
     );
+
+    @Select("<script>" +
+            "SELECT * FROM rag_unit " +
+            "<where>" +
+            "  (node_type = 'LEAF' OR node_type IS NULL) " +
+            "  <if test='userId != null and userId != \"\"'> AND user_id = #{userId} </if>" +
+            "  AND MATCH(title, content, filename) AGAINST(#{keyword} IN NATURAL LANGUAGE MODE) " +
+            "</where>" +
+            "ORDER BY MATCH(title, content, filename) AGAINST(#{keyword} IN NATURAL LANGUAGE MODE) DESC, chunk_index ASC " +
+            "LIMIT #{limit}" +
+            "</script>")
+    List<RagUnit> searchLeafUnitsByFullText(
+            @Param("keyword") String keyword,
+            @Param("userId") String userId,
+            @Param("limit") int limit
+    );
 }

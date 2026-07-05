@@ -7,6 +7,7 @@ import com.example.demo.model.dto.DocumentFileStatusResponse;
 import com.example.demo.model.dto.PageRequest;
 import com.example.demo.model.dto.PageResponse;
 import com.example.demo.model.dto.RagDocumentInfo;
+import com.example.demo.model.dto.UploadResponse;
 import com.example.demo.util.HashUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -114,6 +115,21 @@ public class RagDocumentApplicationService {
             return ApiResponse.error(e.getMessage());
         } catch (Exception e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public ApiResponse<UploadResponse> reprocessDocument(String fileHash, String userId) {
+        if (!isValidSha256(fileHash)) {
+            return ApiResponse.validationError("无效的 SHA-256 哈希值");
+        }
+
+        try {
+            return ApiResponse.success("文档已重新提交处理队列", ragUnitService.reprocessDocumentAsync(userId, fileHash));
+        } catch (RuntimeException e) {
+            if (containsNotFoundMessage(e)) {
+                return ApiResponse.notFound("文档");
+            }
+            return ApiResponse.error(e.getMessage());
         }
     }
 

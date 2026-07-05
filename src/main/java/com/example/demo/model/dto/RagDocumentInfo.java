@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -25,4 +26,24 @@ public class RagDocumentInfo {
     private Integer chunkCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    public Integer getProgressPercent() {
+        return DocumentTaskView.progressPercent(status);
+    }
+
+    public String getProcessingStage() {
+        return DocumentTaskView.processingStage(status);
+    }
+
+    public List<String> getPipelineSteps() {
+        return DocumentTaskView.pipelineSteps(status);
+    }
+
+    public Boolean getCanRetry() {
+        return status == DocumentFileStatus.FAILED && minioUrl != null && !minioUrl.isBlank();
+    }
+
+    public Boolean getCanReindex() {
+        return status == DocumentFileStatus.SUCCESS && minioUrl != null && !minioUrl.isBlank();
+    }
 }

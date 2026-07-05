@@ -5,7 +5,6 @@ import com.example.demo.model.dto.HierarchyHit;
 import com.example.demo.model.dto.MultiTurnChatRequest;
 import com.example.demo.model.dto.RetrievalResult;
 import com.example.demo.model.dto.llm.LlmDebugRequest;
-import com.example.demo.model.dto.llm.LlmDebugResponse;
 import com.example.demo.service.QueryRewriteService;
 import com.example.demo.service.RagRetrievalService;
 import com.example.demo.service.RetrievalSubQueryService;
@@ -25,6 +24,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -103,12 +103,16 @@ public class ReactAgentExecutor {
         requireScenarioAccess(userId, request);
         String systemPrompt = buildMultiTurnSystemPrompt(userId, result, request);
         ServerSentEvent<String> citationsEvent = AgentSseEvents.event("citations", serializeCitations(result));
+        ServerSentEvent<String> retrievalDebugEvent = AgentSseEvents.event(
+                "retrieval_debug",
+                serializeRetrievalDebug(originalQuery, rewrittenQuery, retrievalQueries, result)
+        );
 
         Flux<ServerSentEvent<String>> textFlux = hasCustomProvider(request)
                 ? customProviderFlux(request, systemPrompt)
                 : springAiFlux(request, systemPrompt, originalQuery, userId);
 
-        return Flux.concat(Flux.just(citationsEvent), textFlux, Flux.just(AgentSseEvents.done()));
+        return Flux.concat(Flux.just(citationsEvent, retrievalDebugEvent), textFlux, Flux.just(AgentSseEvents.done()));
     }
 
     private Flux<ServerSentEvent<String>> springAiFlux(MultiTurnChatRequest request,
@@ -134,17 +138,13 @@ public class ReactAgentExecutor {
             debugRequest.setProviderCode(provider.getProviderCode());
             debugRequest.setMessage(request.getMessage());
             debugRequest.setSystemPrompt(systemPrompt);
-            debugRequest.setStream(false);
+            debugRequest.setStream(true);
             debugRequest.setContext(Map.of(
                     "sessionId", request.getSessionId(),
                     "mode", "chat"
             ));
-            LlmDebugResponse response = httpLlmDebugClient.debug(provider, debugRequest);
-            if (!response.isSuccess()) {
-                throw new IllegalStateException(response.getErrorMessage() == null ? "自定义模型调用失败" : response.getErrorMessage());
-            }
-            String content = response.getParsedContent() == null ? "" : response.getParsedContent();
-            return Flux.just(AgentSseEvents.event("token", content));
+            return httpLlmDebugClient.streamContent(provider, debugRequest)
+                    .map(token -> AgentSseEvents.event("token", token));
         });
     }
 
@@ -193,6 +193,72 @@ public class ReactAgentExecutor {
             log.error("序列化引文失败", e);
             return "[]";
         }
+    }
+
+    private String serializeRetrievalDebug(String originalQuery,
+                                           String rewrittenQuery,
+                                           List<String> retrievalQueries,
+                                           RetrievalResult result) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("originalQuery", originalQuery);
+        payload.put("rewrittenQuery", rewrittenQuery);
+        payload.put("subQueries", retrievalQueries != null ? retrievalQueries : List.of());
+        payload.put("hit", result.isHit());
+        payload.put("retrievalMode", result.getRetrievalMode() != null ? result.getRetrievalMode().name() : "");
+        payload.put("candidateCount", result.getCandidateCount());
+        payload.put("finalCount", result.getFinalCount());
+        payload.put("durationMs", result.getDurationMs());
+        payload.put("topScore", topScore(result));
+        payload.put("noHitReason", noHitReason(result));
+        payload.put("finalDocuments", finalDocumentSummaries(result));
+
+        try {
+            return MAPPER.writeValueAsString(payload);
+        } catch (Exception e) {
+            log.error("序列化 RAG 诊断失败", e);
+            return "{}";
+        }
+    }
+
+    private Double topScore(RetrievalResult result) {
+        if (result.getHierarchyHits() != null) {
+            return result.getHierarchyHits().stream()
+                    .map(HierarchyHit::getLeafScore)
+                    .filter(score -> score != null)
+                    .max(Double::compareTo)
+                    .orElse(null);
+        }
+        return null;
+    }
+
+    private String noHitReason(RetrievalResult result) {
+        if (result.isHit()) {
+            return "";
+        }
+        if (result.getCandidateCount() == 0) {
+            return "向量召回、关键词回退均未找到候选文档";
+        }
+        Double score = topScore(result);
+        if (score != null) {
+            return "最高重排分数低于命中阈值: " + String.format("%.4f", score);
+        }
+        return "召回结果未达到命中条件";
+    }
+
+    private List<Map<String, Object>> finalDocumentSummaries(RetrievalResult result) {
+        List<Map<String, Object>> summaries = new ArrayList<>();
+        if (result.getHierarchyHits() == null) {
+            return summaries;
+        }
+        for (HierarchyHit hit : result.getHierarchyHits()) {
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("sourceName", hit.getFilename());
+            summary.put("sectionTitle", hit.getSectionTitle());
+            summary.put("chunkIndex", hit.getLeafChunkIndex());
+            summary.put("score", hit.getLeafScore());
+            summaries.add(summary);
+        }
+        return summaries;
     }
 
     private Object[] resolveTools(String userId, MultiTurnChatRequest request) {

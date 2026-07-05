@@ -11,6 +11,7 @@ import com.example.demo.model.dto.llm.LlmProviderResponse;
 import com.example.demo.model.dto.llm.UpdateLlmModelRequest;
 import com.example.demo.model.dto.llm.UpdateLlmProviderRequest;
 import com.example.demo.service.llm.LlmProviderApplicationService;
+import com.example.demo.service.llm.LlmOpsMetricsService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +37,7 @@ import java.util.List;
 public class LlmProviderController {
 
     private final LlmProviderApplicationService llmProviderApplicationService;
+    private final LlmOpsMetricsService llmOpsMetricsService;
 
     @SaCheckPermission("llm:provider:create")
     @PostMapping("/providers")
@@ -75,10 +77,6 @@ public class LlmProviderController {
         return llmProviderApplicationService.listProviders(includeDisabled);
     }
 
-    public ApiResponse<List<LlmProviderResponse>> listProviders() {
-        return llmProviderApplicationService.listProviders();
-    }
-
     @SaCheckPermission("llm:model:create")
     @PostMapping("/models")
     public ApiResponse<LlmModelResponse> createModel(@Valid @RequestBody CreateLlmModelRequest request) {
@@ -110,15 +108,11 @@ public class LlmProviderController {
         return llmProviderApplicationService.disableModel(id);
     }
 
-    @SaCheckPermission("llm:debug")
+    @SaCheckPermission("llm:model:list")
     @GetMapping("/models")
     public ApiResponse<List<LlmModelResponse>> listModels(
             @RequestParam(defaultValue = "false") boolean includeDisabled) {
         return llmProviderApplicationService.listModels(includeDisabled);
-    }
-
-    public ApiResponse<List<LlmModelResponse>> listModels() {
-        return llmProviderApplicationService.listModels();
     }
 
     @SaCheckPermission("llm:debug")
@@ -131,5 +125,11 @@ public class LlmProviderController {
     @PostMapping(value = "/debug/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> debugStream(@Valid @RequestBody LlmDebugRequest request) {
         return llmProviderApplicationService.debugStream(request);
+    }
+
+    @SaCheckPermission("llm:debug")
+    @GetMapping("/ops/metrics")
+    public ApiResponse<List<java.util.Map<String, Object>>> opsMetrics() {
+        return ApiResponse.success(llmOpsMetricsService.snapshots());
     }
 }

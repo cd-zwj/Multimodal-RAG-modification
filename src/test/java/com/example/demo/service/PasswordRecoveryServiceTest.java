@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -96,7 +97,7 @@ class PasswordRecoveryServiceTest {
         when(stringRedisTemplate.hasKey("auth:password:reset:lockout:alice:127.0.0.1")).thenReturn(false);
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("auth:password:reset:code:alice")).thenReturn(encodedHash);
-        when(authAccountService.resetPasswordByUsername("alice", "newPass123", "newPass123")).thenReturn("user-1");
+        when(authAccountService.resetPasswordAfterRecoveryVerified("alice", "newPass123", "newPass123")).thenReturn("user-1");
 
         ForgotPasswordConfirmRequest request = new ForgotPasswordConfirmRequest();
         request.setUsername("alice");
@@ -107,7 +108,8 @@ class PasswordRecoveryServiceTest {
         String userId = passwordRecoveryService.confirmReset(request, "127.0.0.1");
 
         assertEquals("user-1", userId);
-        verify(authAccountService).resetPasswordByUsername("alice", "newPass123", "newPass123");
+        verify(authAccountService).resetPasswordAfterRecoveryVerified("alice", "newPass123", "newPass123");
+        verify(authAccountService, never()).resetPasswordByUsername(anyString(), anyString(), anyString());
         verify(stringRedisTemplate).delete("auth:password:reset:code:alice");
         verify(stringRedisTemplate).delete("auth:password:reset:cooldown:alice");
     }

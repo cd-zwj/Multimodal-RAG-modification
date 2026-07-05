@@ -35,16 +35,16 @@ class TextProcessorTest {
         unit.setContent("概览\n第一段");
         unit.setChunkIndex(0);
 
-        when(minerUClient.extractText("http://example.com/demo.txt", "demo.txt"))
+        when(minerUClient.extractText("http://example.com/demo.md", "demo.md"))
                 .thenReturn("# 概览\n\n第一段");
-        when(markdownStructureChunker.chunk("# 概览\n\n第一段", "demo.txt", SourceType.TEXT))
+        when(markdownStructureChunker.chunk("# 概览\n\n第一段", "demo.md", SourceType.TEXT))
                 .thenReturn(List.of(unit));
 
         List<RagUnit> units = processor.process(
                 new ByteArrayInputStream("raw text".getBytes(StandardCharsets.UTF_8)),
-                "demo.txt",
-                "text/plain",
-                "http://example.com/demo.txt"
+                "demo.md",
+                "text/markdown",
+                "http://example.com/demo.md"
         );
 
         assertEquals(1, units.size());
@@ -59,19 +59,19 @@ class TextProcessorTest {
         unit.setContent("本地文本");
         unit.setChunkIndex(0);
 
-        when(minerUClient.extractText("http://example.com/demo.txt", "demo.txt"))
+        when(minerUClient.extractText("http://example.com/demo.md", "demo.md"))
                 .thenThrow(new RuntimeException("mineru down"));
-        when(markdownStructureChunker.chunk("本地文本", "demo.txt", SourceType.TEXT))
+        when(markdownStructureChunker.chunk("本地文本", "demo.md", SourceType.TEXT))
                 .thenReturn(List.of(unit));
 
         List<RagUnit> units = processor.process(
                 new ByteArrayInputStream("本地文本".getBytes(StandardCharsets.UTF_8)),
-                "demo.txt",
-                "text/plain",
-                "http://example.com/demo.txt"
+                "demo.md",
+                "text/markdown",
+                "http://example.com/demo.md"
         );
 
-        verify(markdownStructureChunker).chunk("本地文本", "demo.txt", SourceType.TEXT);
+        verify(markdownStructureChunker).chunk("本地文本", "demo.md", SourceType.TEXT);
         assertEquals(1, units.size());
     }
 }

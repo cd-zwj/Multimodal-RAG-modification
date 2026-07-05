@@ -3,6 +3,7 @@ package com.example.demo.model;
 public enum DocumentFileStatus {
     UPLOADING,
     UPLOAD_SUCCESS,
+    PROCESSING,
     REINDEXING,
     CHUNKING,
     VECTORIZING,
@@ -12,6 +13,7 @@ public enum DocumentFileStatus {
     public boolean isProcessing() {
         return this == UPLOADING
                 || this == UPLOAD_SUCCESS
+                || this == PROCESSING
                 || this == REINDEXING
                 || this == CHUNKING
                 || this == VECTORIZING;

@@ -25,7 +25,7 @@ class AuthControllerTest {
     void shouldDelegateLogin() {
         AuthApplicationService authApplicationService = mock(AuthApplicationService.class);
         AuthController controller = new AuthController(authApplicationService);
-        LoginRequest request = new LoginRequest("alice", "secret");
+        LoginRequest request = new LoginRequest("alice", "Secret123");
         LoginResponse response = new LoginResponse("u-1", "alice", "alice@example.com", "token", List.of("admin"), List.of("ai:session:create"));
         when(authApplicationService.login(request)).thenReturn(ApiResponse.success(response));
 
@@ -39,7 +39,7 @@ class AuthControllerTest {
     void shouldDelegateRegisterAndProfile() {
         AuthApplicationService authApplicationService = mock(AuthApplicationService.class);
         AuthController controller = new AuthController(authApplicationService);
-        RegisterRequest registerRequest = new RegisterRequest("alice", "secret123", "alice@example.com");
+        RegisterRequest registerRequest = new RegisterRequest("alice", "Secret123", "alice@example.com");
         UserInfoResponse userInfo = new UserInfoResponse("u-1", "alice", "alice@example.com", "ACTIVE", List.of("admin"), List.of("ai:session:create"));
 
         when(authApplicationService.register(registerRequest)).thenReturn(ApiResponse.success(userInfo));
@@ -55,10 +55,10 @@ class AuthControllerTest {
         AuthApplicationService authApplicationService = mock(AuthApplicationService.class);
         AuthController controller = new AuthController(authApplicationService);
 
-        ChangePasswordRequest changeRequest = new ChangePasswordRequest("oldSecret1", "newSecret1", "newSecret1");
-        AdminResetPasswordRequest resetRequest = new AdminResetPasswordRequest("alice", "adminSecret1", "adminSecret1");
+        ChangePasswordRequest changeRequest = new ChangePasswordRequest("OldSecret1", "NewSecret1", "NewSecret1");
+        AdminResetPasswordRequest resetRequest = new AdminResetPasswordRequest("alice", "AdminSecret1", "AdminSecret1");
         ForgotPasswordRequest forgotRequest = new ForgotPasswordRequest("alice");
-        ForgotPasswordConfirmRequest confirmRequest = new ForgotPasswordConfirmRequest("alice", "123456", "newSecret1", "newSecret1");
+        ForgotPasswordConfirmRequest confirmRequest = new ForgotPasswordConfirmRequest("alice", "123456", "NewSecret1", "NewSecret1");
 
         when(authApplicationService.changePassword(changeRequest)).thenReturn(ApiResponse.success("密码修改成功，请重新登录"));
         when(authApplicationService.adminResetPassword(resetRequest)).thenReturn(ApiResponse.success("密码重置成功"));

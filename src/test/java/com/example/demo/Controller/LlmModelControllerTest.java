@@ -4,6 +4,7 @@ import com.example.demo.model.dto.ApiResponse;
 import com.example.demo.model.dto.llm.CreateLlmModelRequest;
 import com.example.demo.model.dto.llm.LlmModelResponse;
 import com.example.demo.model.dto.llm.UpdateLlmModelRequest;
+import com.example.demo.service.llm.LlmOpsMetricsService;
 import com.example.demo.service.llm.LlmProviderApplicationService;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +19,7 @@ class LlmModelControllerTest {
     @Test
     void shouldDelegateCreateModel() {
         LlmProviderApplicationService service = mock(LlmProviderApplicationService.class);
-        LlmProviderController controller = new LlmProviderController(service);
+        LlmProviderController controller = controller(service);
         CreateLlmModelRequest request = new CreateLlmModelRequest();
         LlmModelResponse response = response();
         when(service.createModel(request)).thenReturn(ApiResponse.success(response));
@@ -32,7 +33,7 @@ class LlmModelControllerTest {
     @Test
     void shouldDelegateUpdateModel() {
         LlmProviderApplicationService service = mock(LlmProviderApplicationService.class);
-        LlmProviderController controller = new LlmProviderController(service);
+        LlmProviderController controller = controller(service);
         UpdateLlmModelRequest request = new UpdateLlmModelRequest();
         LlmModelResponse response = response();
         response.setDisplayName("Qwen Plus Latest");
@@ -47,7 +48,7 @@ class LlmModelControllerTest {
     @Test
     void shouldDelegateDeleteModel() {
         LlmProviderApplicationService service = mock(LlmProviderApplicationService.class);
-        LlmProviderController controller = new LlmProviderController(service);
+        LlmProviderController controller = controller(service);
         when(service.deleteModel("m1")).thenReturn(ApiResponse.success("删除成功"));
 
         ApiResponse<Void> result = controller.deleteModel("m1");
@@ -59,10 +60,10 @@ class LlmModelControllerTest {
     @Test
     void shouldDelegateListModels() {
         LlmProviderApplicationService service = mock(LlmProviderApplicationService.class);
-        LlmProviderController controller = new LlmProviderController(service);
-        when(service.listModels()).thenReturn(ApiResponse.success(List.of(response())));
+        LlmProviderController controller = controller(service);
+        when(service.listModels(false)).thenReturn(ApiResponse.success(List.of(response())));
 
-        ApiResponse<List<LlmModelResponse>> result = controller.listModels();
+        ApiResponse<List<LlmModelResponse>> result = controller.listModels(false);
 
         assertEquals(200, result.getCode());
         assertEquals(1, result.getData().size());
@@ -78,5 +79,9 @@ class LlmModelControllerTest {
         response.setDisplayName("Qwen Plus");
         response.setRemoteModelName("qwen-plus");
         return response;
+    }
+
+    private LlmProviderController controller(LlmProviderApplicationService service) {
+        return new LlmProviderController(service, new LlmOpsMetricsService());
     }
 }

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.demo.mapper.RagUnitMapper;
 import com.example.demo.model.RagNodeType;
 import com.example.demo.model.RagUnit;
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -23,6 +24,7 @@ import java.util.Set;
  */
 @Repository
 @RequiredArgsConstructor
+@Slf4j
 public class RagUnitQueryRepository {
 
     private final RagUnitMapper ragUnitMapper;
@@ -81,6 +83,27 @@ public class RagUnitQueryRepository {
      * 关键词搜索叶子节点（标题/内容/文件名模糊匹配）。
      */
     public List<RagUnit> searchLeafUnitsByKeyword(String keyword, String userId, int limit) {
+        List<RagUnit> fullTextResults = searchLeafUnitsByFullText(keyword, userId, limit);
+        if (!fullTextResults.isEmpty()) {
+            return fullTextResults;
+        }
+        return searchLeafUnitsByLike(keyword, userId, limit);
+    }
+
+    private List<RagUnit> searchLeafUnitsByFullText(String keyword, String userId, int limit) {
+        if (keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<RagUnit> results = ragUnitMapper.searchLeafUnitsByFullText(keyword.trim(), userId, Math.max(limit, 1));
+            return results == null ? List.of() : results;
+        } catch (RuntimeException e) {
+            log.warn("FULLTEXT 关键词检索失败，降级为 LIKE 检索: keyword={}, reason={}", keyword, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<RagUnit> searchLeafUnitsByLike(String keyword, String userId, int limit) {
         QueryWrapper<RagUnit> wrapper = new QueryWrapper<>();
         wrapper.and(group -> group
                         .eq("node_type", RagNodeType.LEAF.name())

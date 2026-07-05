@@ -123,6 +123,14 @@ public class AuthAccountService {
         return user.getId();
     }
 
+    public String resetPasswordAfterRecoveryVerified(String username, String newPassword, String confirmNewPassword) {
+        String normalizedUsername = normalizeUsername(username);
+        AuthUser user = requireByUsername(normalizedUsername);
+        validateNewPassword(newPassword, confirmNewPassword);
+        updatePasswordHash(user, newPassword);
+        return user.getId();
+    }
+
     public AuthUser requireByUsername(String username) {
         String normalizedUsername = normalizeUsername(username);
         AuthUser user = authUserMapper.selectByUsername(normalizedUsername);

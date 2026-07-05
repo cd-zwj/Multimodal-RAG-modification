@@ -78,8 +78,7 @@ router.beforeEach(async (to, from, next) => {
       next({ name: 'Login' })
     } else if (
       to.name === 'LlmProviderAdmin' &&
-      !authStore.isAdmin &&
-      !authStore.permissions.includes('llm:debug')
+      !authStore.isAdmin
     ) {
       next({ name: 'Chat' })
     } else {

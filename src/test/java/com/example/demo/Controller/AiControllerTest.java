@@ -181,8 +181,10 @@ class AiControllerTest {
         assertTrue(events.get(0).data().contains("\"docTitle\":\"年度报告\""));
         assertTrue(events.get(0).data().contains("\"sectionTitle\":\"财务概览\""));
         assertTrue(events.get(0).data().contains("\"chunkIndex\":3"));
-        assertEquals("token", events.get(1).event());
-        assertEquals("首段", events.get(1).data());
+        assertEquals("retrieval_debug", events.get(1).event());
+        assertTrue(events.get(1).data().contains("\"originalQuery\":\"总结文档\""));
+        assertEquals("token", events.get(2).event());
+        assertEquals("首段", events.get(2).data());
     }
 
     @Test
@@ -266,7 +268,8 @@ class AiControllerTest {
                 .thenReturn(RetrievalResult.empty(0));
         when(userProfileService.getProfile("u1")).thenReturn(null);
         when(registry.getRequired("custom-openai")).thenReturn(provider);
-        when(debugClient.debug(eq(provider), org.mockito.ArgumentMatchers.any())).thenReturn(response);
+        when(debugClient.streamContent(eq(provider), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Flux.just("自定义", "模型", "回答"));
 
         com.example.demo.service.agent.ReactAgentExecutor executor = new com.example.demo.service.agent.ReactAgentExecutor(
                 deepchatClient,
@@ -284,9 +287,12 @@ class AiControllerTest {
         List<ServerSentEvent<String>> events = executor.execute(request, "u1").collectList().block();
 
         assertEquals("citations", events.get(0).event());
-        assertEquals("token", events.get(1).event());
-        assertEquals("自定义模型回答", events.get(1).data());
-        assertEquals("done", events.get(2).event());
+        assertEquals("retrieval_debug", events.get(1).event());
+        assertEquals("token", events.get(2).event());
+        assertEquals("自定义", events.get(2).data());
+        assertEquals("模型", events.get(3).data());
+        assertEquals("回答", events.get(4).data());
+        assertEquals("done", events.get(5).event());
         verify(registry).getRequired("custom-openai");
         verify(deepchatClient, org.mockito.Mockito.never()).prompt();
     }

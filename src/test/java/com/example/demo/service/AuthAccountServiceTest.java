@@ -66,11 +66,11 @@ class AuthAccountServiceTest {
         });
         when(authUserRoleMapper.insert(any(AuthUserRole.class))).thenReturn(1);
 
-        AuthUser registered = authAccountService.register("alice", "secret123", "alice@example.com");
-        AuthUser authenticated = authAccountService.authenticate("alice", "secret123");
+        AuthUser registered = authAccountService.register("alice", "Secret123", "alice@example.com");
+        AuthUser authenticated = authAccountService.authenticate("alice", "Secret123");
 
         assertEquals(registered.getId(), authenticated.getId());
-        assertNotEquals("secret123", storedUser.get().getPasswordHash());
+        assertNotEquals("Secret123", storedUser.get().getPasswordHash());
         assertEquals("alice@example.com", storedUser.get().getEmail());
     }
 
@@ -80,7 +80,7 @@ class AuthAccountServiceTest {
         storedUser.setId("u-1");
         storedUser.setUsername("alice");
         storedUser.setStatus("ACTIVE");
-        storedUser.setPasswordHash(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("oldSecret1"));
+        storedUser.setPasswordHash(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("OldSecret1"));
 
         when(authUserMapper.selectById("u-1")).thenReturn(storedUser);
         when(authUserMapper.selectByUsername("alice")).thenReturn(storedUser);
@@ -91,10 +91,10 @@ class AuthAccountServiceTest {
             return 1;
         });
 
-        authAccountService.changePassword("u-1", "oldSecret1", "newSecret1", "newSecret1");
+        authAccountService.changePassword("u-1", "OldSecret1", "NewSecret1", "NewSecret1");
 
-        assertThrows(BusinessException.class, () -> authAccountService.authenticate("alice", "oldSecret1"));
-        AuthUser authenticated = authAccountService.authenticate("alice", "newSecret1");
+        assertThrows(BusinessException.class, () -> authAccountService.authenticate("alice", "OldSecret1"));
+        AuthUser authenticated = authAccountService.authenticate("alice", "NewSecret1");
         assertEquals("u-1", authenticated.getId());
     }
 
@@ -105,7 +105,7 @@ class AuthAccountServiceTest {
         storedUser.setUsername("alice");
         storedUser.setEmail("alice@example.com");
         storedUser.setStatus("ACTIVE");
-        storedUser.setPasswordHash(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("oldSecret1"));
+        storedUser.setPasswordHash(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("OldSecret1"));
 
         when(authUserMapper.selectByUsername("alice")).thenReturn(storedUser);
         when(authUserMapper.updateById(any(AuthUser.class))).thenAnswer(invocation -> {
@@ -118,10 +118,10 @@ class AuthAccountServiceTest {
             stpMock.when(StpUtil::getLoginIdAsString).thenReturn("admin-1");
             when(authPermissionService.getRoleList("admin-1", "login")).thenReturn(List.of("admin"));
 
-            String userId = authAccountService.resetPasswordByUsername("alice", "resetSecret1", "resetSecret1");
+            String userId = authAccountService.resetPasswordByUsername("alice", "ResetSecret1", "ResetSecret1");
 
             assertEquals("u-1", userId);
-            assertEquals("u-1", authAccountService.authenticate("alice", "resetSecret1").getId());
+            assertEquals("u-1", authAccountService.authenticate("alice", "ResetSecret1").getId());
         }
     }
 
@@ -136,7 +136,7 @@ class AuthAccountServiceTest {
 
         BusinessException error = assertThrows(
                 BusinessException.class,
-                () -> authAccountService.register("alice", "secret123", "alice@example.com")
+                () -> authAccountService.register("alice", "Secret123", "alice@example.com")
         );
 
         assertEquals("邮箱已被占用", error.getMessage());

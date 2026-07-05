@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS rag_unit (
     INDEX idx_filename (filename),
     INDEX idx_source_type (source_type),
     INDEX idx_parent_id (parent_id),
-    INDEX idx_user_file_hash (user_id, file_hash)
+    INDEX idx_user_file_hash (user_id, file_hash),
+    FULLTEXT INDEX ft_rag_unit_keyword (title, content, filename) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='RAG切片存储表';
 
 CREATE TABLE IF NOT EXISTS document_file (

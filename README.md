@@ -71,7 +71,7 @@
 # MySQL
 docker run -d --name mysql \
   -p 3306:3306 \
-  -e MYSQL_ROOT_PASSWORD=nm561234789 \
+  -e MYSQL_ROOT_PASSWORD=change-me-in-local-env \
   -e MYSQL_DATABASE=rag_knowledge \
   mysql:8.0
 
@@ -215,11 +215,15 @@ nohup java -jar target/demo-0.0.1-SNAPSHOT.jar \
 export DB_PASSWORD=你的MySQL密码
 export DASHSCOPE_API_KEY=你的DashScope Key
 export REDIS_PASSWORD=你的Redis密码
+export RABBITMQ_USERNAME=你的RabbitMQ用户名
 export RABBITMQ_PASSWORD=你的RabbitMQ密码
+export MINIO_ACCESS_KEY=你的MinIO用户名
 export MINIO_SECRET_KEY=你的MinIO密码
 
 java -jar target/demo-0.0.1-SNAPSHOT.jar
 ```
+
+> 本地 Docker 示例中的 `guest` / `minioadmin` 只用于开发环境。生产环境必须通过环境变量提供强凭据，不能沿用默认弱口令。
 
 ### Nginx 配置（前端 + 反向代理）
 
@@ -271,8 +275,10 @@ server {
 | `ALIYUN_ASR_APP_KEY` | ❌ | — | 阿里云语音识别 AppKey |
 | `BAIDU_MAP_AK` | ❌ | — | 百度地图 MCP |
 | `REDIS_PASSWORD` | ❌ | 空 | Redis 密码（Docker 默认无密码） |
-| `RABBITMQ_PASSWORD` | ❌ | guest | RabbitMQ 密码 |
-| `MINIO_SECRET_KEY` | ❌ | minioadmin | MinIO 密钥 |
+| `RABBITMQ_USERNAME` | ❌ | guest | RabbitMQ 用户名（仅本地默认） |
+| `RABBITMQ_PASSWORD` | ✅ | — | RabbitMQ 密码 |
+| `MINIO_ACCESS_KEY` | ❌ | minioadmin | MinIO 用户名（仅本地默认） |
+| `MINIO_SECRET_KEY` | ✅ | — | MinIO 密钥 |
 
 ---
 

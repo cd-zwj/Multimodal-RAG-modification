@@ -50,14 +50,14 @@ class AuthApplicationServiceTest {
         user.setUsername("alice");
         user.setStatus("ACTIVE");
 
-        when(authAccountService.authenticate("alice", "secret")).thenReturn(user);
+        when(authAccountService.authenticate("alice", "Secret123")).thenReturn(user);
         when(authPermissionService.getRoleList("u-1", "login")).thenReturn(List.of("admin"));
         when(authPermissionService.getPermissionList("u-1", "login")).thenReturn(List.of("ai:session:create"));
 
         try (MockedStatic<StpUtil> stpUtil = mockStatic(StpUtil.class)) {
             stpUtil.when(() -> StpUtil.getTokenValue()).thenReturn("token-123");
 
-            ApiResponse<LoginResponse> response = authApplicationService.login(new LoginRequest("alice", "secret"));
+            ApiResponse<LoginResponse> response = authApplicationService.login(new LoginRequest("alice", "Secret123"));
 
             stpUtil.verify(() -> StpUtil.login("u-1"));
             assertEquals(200, response.getCode());
@@ -91,11 +91,11 @@ class AuthApplicationServiceTest {
         user.setEmail("alice@example.com");
         user.setStatus("ACTIVE");
 
-        when(authAccountService.register("alice", "secret123", "alice@example.com")).thenReturn(user);
+        when(authAccountService.register("alice", "Secret123", "alice@example.com")).thenReturn(user);
         when(authPermissionService.getRoleList("u-1", "login")).thenReturn(List.of("user"));
         when(authPermissionService.getPermissionList("u-1", "login")).thenReturn(List.of("document:list"));
 
-        ApiResponse<UserInfoResponse> response = authApplicationService.register(new RegisterRequest("alice", "secret123", "alice@example.com"));
+        ApiResponse<UserInfoResponse> response = authApplicationService.register(new RegisterRequest("alice", "Secret123", "alice@example.com"));
 
         assertEquals("u-1", response.getData().getUserId());
         assertEquals("alice@example.com", response.getData().getEmail());
@@ -108,7 +108,7 @@ class AuthApplicationServiceTest {
 
         try (MockedStatic<StpUtil> stpUtil = mockStatic(StpUtil.class)) {
             ApiResponse<String> response = authApplicationService.changePassword(
-                    new ChangePasswordRequest("oldSecret1", "newSecret1", "newSecret1")
+                    new ChangePasswordRequest("OldSecret1", "NewSecret1", "NewSecret1")
             );
 
             stpUtil.verify(() -> StpUtil.logout("u-1"));
@@ -118,11 +118,11 @@ class AuthApplicationServiceTest {
 
     @Test
     void shouldResetPasswordAsAdminAndLogoutTargetUser() {
-        when(authAccountService.resetPasswordByUsername("alice", "newSecret1", "newSecret1")).thenReturn("u-2");
+        when(authAccountService.resetPasswordByUsername("alice", "NewSecret1", "NewSecret1")).thenReturn("u-2");
 
         try (MockedStatic<StpUtil> stpUtil = mockStatic(StpUtil.class)) {
             ApiResponse<String> response = authApplicationService.adminResetPassword(
-                    new AdminResetPasswordRequest("alice", "newSecret1", "newSecret1")
+                    new AdminResetPasswordRequest("alice", "NewSecret1", "NewSecret1")
             );
 
             stpUtil.verify(() -> StpUtil.logout("u-2"));
@@ -144,13 +144,13 @@ class AuthApplicationServiceTest {
     @Test
     void shouldConfirmForgotPasswordAndLogoutUser() {
         when(passwordRecoveryService.confirmReset(
-                new ForgotPasswordConfirmRequest("alice", "123456", "newSecret1", "newSecret1"),
+                new ForgotPasswordConfirmRequest("alice", "123456", "NewSecret1", "NewSecret1"),
                 "127.0.0.1"))
                 .thenReturn("u-3");
 
         try (MockedStatic<StpUtil> stpUtil = mockStatic(StpUtil.class)) {
             ApiResponse<String> response = authApplicationService.confirmForgotPassword(
-                    new ForgotPasswordConfirmRequest("alice", "123456", "newSecret1", "newSecret1"),
+                    new ForgotPasswordConfirmRequest("alice", "123456", "NewSecret1", "NewSecret1"),
                     "127.0.0.1"
             );
 

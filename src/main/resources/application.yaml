@@ -90,8 +90,8 @@ spring:
   rabbitmq:
     host: localhost
     port: 5672
-    username: guest
-    password: guest
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:}
     virtual-host: /
     connection-timeout: 30000
     listener:
@@ -109,8 +109,8 @@ spring:
 
 minio:
   endpoint: http://localhost:9000
-  access-key: minioadmin
-  secret-key: minioadmin
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:}
   bucket: rag-knowledge
 
 file:
@@ -165,6 +165,9 @@ rag:
     hit-score-threshold: 0.35
   rerank:
     model: gte-rerank-v2
+
+llm:
+  secret-key: ${LLM_SECRET_KEY:}
 
 sa-token:
   token-name: satoken

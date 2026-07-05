@@ -31,7 +31,7 @@ class EmailServiceTest {
         assertTrue(Files.exists(mailFile));
         String content = Files.readString(mailFile);
         assertTrue(content.contains("alice@example.com"));
-        assertTrue(content.contains("123456"));
+        assertTrue(content.contains("12****"));
     }
 
     @Test

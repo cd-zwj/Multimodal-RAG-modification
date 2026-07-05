@@ -112,7 +112,7 @@ public class PasswordRecoveryService {
         // 验证成功，清除失败计数
         clearFailedAttempts(normalizedUsername, clientIp);
 
-        String userId = authAccountService.resetPasswordByUsername(
+        String userId = authAccountService.resetPasswordAfterRecoveryVerified(
                 normalizedUsername,
                 request.getNewPassword(),
                 request.getConfirmNewPassword()

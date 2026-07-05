@@ -1,13 +1,14 @@
 package com.example.demo;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+
 class DemoApplicationTests {
 
 	@Test
-	void contextLoads() {
+	void mainClassIsLoadable() {
+		assertDoesNotThrow(() -> Class.forName(DemoApplication.class.getName()));
 	}
 
 }

@@ -1,6 +1,10 @@
 package com.example.demo.service.agent;
 
 import com.example.demo.model.dto.MultiTurnChatRequest;
+import com.example.demo.model.dto.llm.LlmDebugRequest;
+import com.example.demo.service.llm.HttpLlmDebugClient;
+import com.example.demo.service.llm.LlmProviderRegistry;
+import com.example.demo.service.llm.RuntimeLlmProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -44,6 +48,12 @@ class PlanExecuteAgentExecutorTest {
 
     @Mock
     private ReactAgentExecutor reactAgentExecutor;
+
+    @Mock
+    private LlmProviderRegistry llmProviderRegistry;
+
+    @Mock
+    private HttpLlmDebugClient httpLlmDebugClient;
 
     @Test
     void shouldRejectApprovedPlanAfterRedisTtlExpires() throws Exception {
@@ -129,8 +139,34 @@ class PlanExecuteAgentExecutorTest {
         assertEquals("## 执行计划", payload.path("planText").asText());
         verify(advisorSpec).param(ChatMemory.CONVERSATION_ID, "agent:plan:s1");
     }
+
+    @Test
+    void shouldUseSelectedCustomModelWhenGeneratingPlan() throws Exception {
+        RuntimeLlmProvider provider = RuntimeLlmProvider.builder()
+                .providerCode("custom-openai")
+                .defaultModel("gpt-test")
+                .build();
+        when(llmProviderRegistry.getRequiredByModelCode("gpt-test-prod")).thenReturn(provider);
+        when(httpLlmDebugClient.streamContent(eq(provider), any(LlmDebugRequest.class)))
+                .thenReturn(Flux.just("## ", "自定义计划"));
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        MultiTurnChatRequest request = request("修复问题");
+        request.setModelCode("gpt-test-prod");
+        List<ServerSentEvent<String>> events = executorWithCustomLlm().execute(request, "u1").collectList().block();
+
+        assertEquals("plan_required", events.get(0).event());
+        JsonNode payload = MAPPER.readTree(events.get(0).data());
+        assertEquals("## 自定义计划", payload.path("planText").asText());
+        verify(deepchatClient, never()).prompt();
+    }
+
     private PlanExecuteAgentExecutor executor() {
         return new PlanExecuteAgentExecutor(deepchatClient, redisTemplate, reactAgentExecutor);
+    }
+
+    private PlanExecuteAgentExecutor executorWithCustomLlm() {
+        return new PlanExecuteAgentExecutor(deepchatClient, redisTemplate, reactAgentExecutor, llmProviderRegistry, httpLlmDebugClient);
     }
 
     private String createPlanAndExtractId(PlanExecuteAgentExecutor executor) throws Exception {

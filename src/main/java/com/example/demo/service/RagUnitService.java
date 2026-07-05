@@ -285,6 +285,50 @@ public class RagUnitService {
         return documentDeleteService.asyncDeleteDocument(userId, fileHash);
     }
 
+    public UploadResponse reprocessDocumentAsync(String userId, String fileHash) {
+        validateUserId(userId);
+        validateFileHash(fileHash);
+
+        DocumentFile documentFile = documentFileService.getActiveByFileHash(userId, fileHash);
+        if (documentFile == null) {
+            throw new IllegalArgumentException("文档不存在: " + fileHash);
+        }
+        if (documentFile.getStatus() != null && documentFile.getStatus().isProcessing()) {
+            return buildUploadResponse(documentFile, "文件已在后台处理中，请稍后查看状态", true);
+        }
+        if (documentFile.getMinioUrl() == null || documentFile.getMinioUrl().isBlank()) {
+            throw new IllegalStateException("文档缺少对象存储地址，无法重试处理");
+        }
+
+        try {
+            removeIndexedData(documentFile.getSourceId());
+            documentFileService.updateStatus(userId, fileHash, DocumentFileStatus.REINDEXING, 0, null);
+
+            String mimeType = tika.detect(new byte[0], documentFile.getFilename());
+            validateMimeType(mimeType);
+            FileProcessTask task = FileProcessTask.builder()
+                    .sourceId(documentFile.getSourceId())
+                    .filename(documentFile.getFilename())
+                    .fileHash(documentFile.getFileHash())
+                    .userId(userId)
+                    .mimeType(mimeType)
+                    .minioPath(documentFile.getMinioPath())
+                    .minioUrl(documentFile.getMinioUrl())
+                    .fileSize(documentFile.getFileSize())
+                    .createTimestamp(System.currentTimeMillis())
+                    .build();
+            fileProcessProducer.sendFileProcessTask(task);
+            return buildUploadResponse(
+                    documentFileService.getActiveByFileHash(userId, fileHash),
+                    "文档已重新提交处理队列",
+                    true
+            );
+        } catch (Exception e) {
+            documentFileService.markFailed(userId, fileHash, normalizeErrorMessage(e));
+            throw new RuntimeException(e);
+        }
+    }
+
     @Deprecated
     public String deleteDocumentAsyncByFilename(String userId, String filename) {
         validateUserId(userId);

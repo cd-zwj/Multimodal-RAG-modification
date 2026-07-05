@@ -9,6 +9,7 @@ import com.example.demo.model.dto.llm.UpdateLlmProviderRequest;
 import com.example.demo.model.llm.LlmAuthType;
 import com.example.demo.model.llm.LlmProtocolType;
 import com.example.demo.service.llm.LlmProviderApplicationService;
+import com.example.demo.service.llm.LlmOpsMetricsService;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -23,7 +24,7 @@ class LlmProviderControllerTest {
     @Test
     void shouldDelegateCreateProvider() {
         LlmProviderApplicationService service = mock(LlmProviderApplicationService.class);
-        LlmProviderController controller = new LlmProviderController(service);
+        LlmProviderController controller = controller(service);
         CreateLlmProviderRequest request = new CreateLlmProviderRequest();
         request.setProviderCode("custom-openai");
         request.setProviderName("自定义 OpenAI");
@@ -48,7 +49,7 @@ class LlmProviderControllerTest {
     @Test
     void shouldDelegateDebugProvider() {
         LlmProviderApplicationService service = mock(LlmProviderApplicationService.class);
-        LlmProviderController controller = new LlmProviderController(service);
+        LlmProviderController controller = controller(service);
         LlmDebugRequest request = new LlmDebugRequest();
         request.setProviderCode("custom-openai");
         request.setMessage("你好");
@@ -71,14 +72,14 @@ class LlmProviderControllerTest {
     @Test
     void shouldDelegateListProviders() {
         LlmProviderApplicationService service = mock(LlmProviderApplicationService.class);
-        LlmProviderController controller = new LlmProviderController(service);
+        LlmProviderController controller = controller(service);
 
         LlmProviderResponse response = new LlmProviderResponse();
         response.setId("p1");
         response.setProviderCode("custom-openai");
-        when(service.listProviders()).thenReturn(ApiResponse.success(List.of(response)));
+        when(service.listProviders(false)).thenReturn(ApiResponse.success(List.of(response)));
 
-        ApiResponse<List<LlmProviderResponse>> result = controller.listProviders();
+        ApiResponse<List<LlmProviderResponse>> result = controller.listProviders(false);
 
         assertEquals(200, result.getCode());
         assertEquals(1, result.getData().size());
@@ -88,7 +89,7 @@ class LlmProviderControllerTest {
     @Test
     void shouldDelegateUpdateProvider() {
         LlmProviderApplicationService service = mock(LlmProviderApplicationService.class);
-        LlmProviderController controller = new LlmProviderController(service);
+        LlmProviderController controller = controller(service);
         UpdateLlmProviderRequest request = new UpdateLlmProviderRequest();
         request.setProviderName("更新后的 Provider");
         request.setProtocolType(LlmProtocolType.OPENAI_COMPATIBLE);
@@ -110,12 +111,16 @@ class LlmProviderControllerTest {
     @Test
     void shouldDelegateDeleteProvider() {
         LlmProviderApplicationService service = mock(LlmProviderApplicationService.class);
-        LlmProviderController controller = new LlmProviderController(service);
+        LlmProviderController controller = controller(service);
         when(service.deleteProvider("p1")).thenReturn(ApiResponse.success("删除成功"));
 
         ApiResponse<Void> result = controller.deleteProvider("p1");
 
         assertEquals(200, result.getCode());
         assertEquals("删除成功", result.getMessage());
+    }
+
+    private LlmProviderController controller(LlmProviderApplicationService service) {
+        return new LlmProviderController(service, new LlmOpsMetricsService());
     }
 }

@@ -1,12 +1,16 @@
 package com.example.demo.service.agent;
 
 import com.example.demo.model.dto.MultiTurnChatRequest;
+import com.example.demo.model.dto.llm.LlmDebugRequest;
+import com.example.demo.service.llm.HttpLlmDebugClient;
+import com.example.demo.service.llm.LlmProviderRegistry;
+import com.example.demo.service.llm.RuntimeLlmProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -21,7 +25,6 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class PlanExecuteAgentExecutor {
 
     private static final String PLAN_KEY_PREFIX = "agent:plan:";
@@ -36,6 +39,27 @@ public class PlanExecuteAgentExecutor {
     private final ChatClient deepchatClient;
     private final StringRedisTemplate redisTemplate;
     private final ReactAgentExecutor reactAgentExecutor;
+    private final LlmProviderRegistry llmProviderRegistry;
+    private final HttpLlmDebugClient httpLlmDebugClient;
+
+    @Autowired
+    public PlanExecuteAgentExecutor(ChatClient deepchatClient,
+                                    StringRedisTemplate redisTemplate,
+                                    ReactAgentExecutor reactAgentExecutor,
+                                    LlmProviderRegistry llmProviderRegistry,
+                                    HttpLlmDebugClient httpLlmDebugClient) {
+        this.deepchatClient = deepchatClient;
+        this.redisTemplate = redisTemplate;
+        this.reactAgentExecutor = reactAgentExecutor;
+        this.llmProviderRegistry = llmProviderRegistry;
+        this.httpLlmDebugClient = httpLlmDebugClient;
+    }
+
+    public PlanExecuteAgentExecutor(ChatClient deepchatClient,
+                                    StringRedisTemplate redisTemplate,
+                                    ReactAgentExecutor reactAgentExecutor) {
+        this(deepchatClient, redisTemplate, reactAgentExecutor, null, null);
+    }
 
     public Flux<ServerSentEvent<String>> execute(MultiTurnChatRequest request, String userId) {
         if (request.getApprovedPlanId() != null && !request.getApprovedPlanId().isBlank()) {
@@ -102,6 +126,9 @@ public class PlanExecuteAgentExecutor {
 
     private String generatePlanText(MultiTurnChatRequest request) {
         try {
+            if (hasCustomProvider(request)) {
+                return generatePlanTextWithCustomProvider(request);
+            }
             return deepchatClient.prompt()
                     .system(PLAN_PROMPT)
                     .user(request.getMessage())
@@ -118,6 +145,33 @@ public class PlanExecuteAgentExecutor {
                     4. 汇总结果、风险和后续建议。
                     """;
         }
+    }
+
+    private String generatePlanTextWithCustomProvider(MultiTurnChatRequest request) {
+        RuntimeLlmProvider provider = request.getModelCode() != null && !request.getModelCode().isBlank()
+                ? llmProviderRegistry.getRequiredByModelCode(request.getModelCode().trim())
+                : llmProviderRegistry.getRequired(request.getProviderCode().trim());
+        LlmDebugRequest debugRequest = new LlmDebugRequest();
+        debugRequest.setProviderCode(provider.getProviderCode());
+        debugRequest.setMessage(request.getMessage());
+        debugRequest.setSystemPrompt(PLAN_PROMPT);
+        debugRequest.setStream(true);
+        debugRequest.setContext(Map.of(
+                "sessionId", request.getSessionId(),
+                "mode", "plan"
+        ));
+        return httpLlmDebugClient.streamContent(provider, debugRequest)
+                .collectList()
+                .map(chunks -> String.join("", chunks))
+                .block(Duration.ofSeconds(60));
+    }
+
+    private boolean hasCustomProvider(MultiTurnChatRequest request) {
+        boolean hasProvider = request.getProviderCode() != null && !request.getProviderCode().isBlank();
+        boolean hasModel = request.getModelCode() != null && !request.getModelCode().isBlank();
+        return (hasProvider || hasModel)
+                && llmProviderRegistry != null
+                && httpLlmDebugClient != null;
     }
 
     private String planConversationId(String sessionId) {

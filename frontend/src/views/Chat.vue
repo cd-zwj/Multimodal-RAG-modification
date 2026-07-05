@@ -212,58 +212,13 @@
       </div>
     </div>
 
-    <!-- Right Panel: Citations / References Panel -->
-    <aside
-      v-if="citationsList.length > 0"
-      class="hidden xl:flex flex-col w-80 bg-surface-container-lowest border-l border-outline-variant flex-shrink-0 h-full overflow-hidden shadow-sm min-h-0"
-    >
-      <div class="p-md border-b border-outline-variant flex items-center justify-between bg-surface-bright">
-        <h3 class="font-headline-sm text-[18px] leading-[24px] font-semibold text-on-surface flex items-center gap-sm">
-          <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">source</span>
-          知识来源 ({{ citationsList.length }})
-        </h3>
-        <button
-          @click="clearCitations"
-          class="text-on-surface-variant hover:bg-surface-container-high p-1 rounded-md transition-colors cursor-pointer"
-        >
-          <span class="material-symbols-outlined text-[20px]">close</span>
-        </button>
-      </div>
-      <div class="flex-1 min-h-0 overflow-y-auto p-md flex flex-col gap-md bg-background/50">
-        <div
-          v-for="(cite, i) in citationsList"
-          :key="i"
-          @click="openPdfFromCitation(cite)"
-          class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md shadow-sm hover:border-primary transition-all duration-200 cursor-pointer"
-        >
-          <div class="flex items-start justify-between mb-sm gap-xs">
-            <div class="flex items-center gap-xs text-primary font-label-md text-label-md min-w-0">
-              <span class="material-symbols-outlined text-[16px] flex-shrink-0">description</span>
-              <span class="truncate font-semibold">{{ cite.sourceName }}</span>
-            </div>
-            <span class="bg-surface-container text-primary px-2 py-0.5 rounded-full font-label-md text-label-md flex-shrink-0">
-              {{ cite.label }}
-            </span>
-          </div>
-          <p
-            v-if="formatCitationPath(cite)"
-            class="font-label-md text-label-md text-outline mb-sm break-words"
-          >
-            {{ formatCitationPath(cite) }}
-          </p>
-          <p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-4 leading-relaxed">
-            {{ cite.text }}
-          </p>
-          <div class="mt-sm pt-sm border-t border-surface-variant flex items-center justify-between text-outline">
-            <span class="font-label-md text-label-md flex items-center gap-xs">
-              <span class="material-symbols-outlined text-[14px]">check_circle</span>
-              匹配度: {{ cite.score }}%
-            </span>
-            <span class="font-label-md text-label-md text-primary hover:underline">查看源文本</span>
-          </div>
-        </div>
-      </div>
-    </aside>
+    <CitationPanel
+      :citations="citationsList"
+      :retrieval-debug="retrievalDebug"
+      :selected-index="selectedCitationIndex"
+      @clear="clearCitations"
+      @select="selectCitation"
+    />
 
     <!-- PDF Preview Modal -->
     <div
@@ -301,6 +256,8 @@ import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { useAuthStore } from '../store/auth'
 import { ai, documents, llm } from '../api'
+import { useRecorder } from '../composables/useRecorder'
+import CitationPanel from '../components/CitationPanel.vue'
 
 const props = defineProps({
   newSessionTrigger: {
@@ -317,6 +274,8 @@ const sessionsList = ref([])
 const currentSessionId = ref('')
 const chatMessages = ref([])
 const citationsList = ref([])
+const retrievalDebug = ref(null)
+const selectedCitationIndex = ref(-1)
 const inputMessage = ref('')
 const streaming = ref(false)
 const messageContainer = ref(null)
@@ -335,150 +294,57 @@ const agentModeOptions = [
   { value: 'PLAN_EXECUTE', label: 'Plan + 执行', title: '先生成计划，确认后再执行' }
 ]
 
-const recording = ref(false)
-let audioContext = null
-let mediaStream = null
-let processorNode = null
-let sourceNode = null
-let audioBuffers = []
-
 const previewPdfUrl = ref('')
 const previewPdfName = ref('')
 
-const toggleRecording = async () => {
-  if (recording.value) {
-    await stopAndSendRecording()
-  } else {
-    await startRecording()
-  }
-}
-
-const startRecording = async () => {
-  try {
-    audioBuffers = []
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    audioContext = new (window.AudioContext || window.webkitAudioContext)({
-      sampleRate: 16000
-    })
-    
-    sourceNode = audioContext.createMediaStreamSource(mediaStream)
-    processorNode = audioContext.createScriptProcessor(4096, 1, 1)
-    
-    processorNode.onaudioprocess = (e) => {
-      const inputData = e.inputBuffer.getChannelData(0)
-      audioBuffers.push(new Float32Array(inputData))
-    }
-    
-    sourceNode.connect(processorNode)
-    processorNode.connect(audioContext.destination)
-    recording.value = true
-  } catch (err) {
-    console.error('无法启动录音:', err)
-    alert('启动麦克风录音失败，请确保已授予麦克风权限！')
-  }
-}
-
-const downsampleBuffer = (buffer, inputSampleRate, outputSampleRate = 16000) => {
-  if (inputSampleRate === outputSampleRate) {
-    return buffer
-  }
-  if (inputSampleRate < outputSampleRate) {
-    throw new Error('输入采样率过低')
-  }
-  const sampleRateRatio = inputSampleRate / outputSampleRate
-  const newLength = Math.round(buffer.length / sampleRateRatio)
-  const result = new Float32Array(newLength)
-  let offsetResult = 0
-  let offsetBuffer = 0
-  while (offsetResult < result.length) {
-    const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio)
-    let accum = 0, count = 0
-    for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
-      accum += buffer[i]
-      count++
-    }
-    result[offsetResult] = accum / count
-    offsetResult++
-    offsetBuffer = nextOffsetBuffer
-  }
-  return result
-}
-
-const stopAndSendRecording = async () => {
-  if (!recording.value) return
-  recording.value = false
-  
-  try {
-    if (processorNode) {
-      processorNode.disconnect()
-      sourceNode.disconnect()
-      processorNode = null
-      sourceNode = null
-    }
-    if (mediaStream) {
-      mediaStream.getTracks().forEach(track => track.stop())
-      mediaStream = null
-    }
-    const inputSampleRate = audioContext.sampleRate
-    if (audioContext) {
-      await audioContext.close()
-      audioContext = null
-    }
-    
-    // Merge Float32Array buffers
-    const totalLength = audioBuffers.reduce((acc, buf) => acc + buf.length, 0)
-    if (totalLength === 0) {
-      alert('录音为空，请再试一次！')
-      return
-    }
-    
-    const mergedBuffer = new Float32Array(totalLength)
-    let offset = 0
-    for (const buf of audioBuffers) {
-      mergedBuffer.set(buf, offset)
-      offset += buf.length
-    }
-    
-    // Downsample
-    const downsampled = downsampleBuffer(mergedBuffer, inputSampleRate, 16000)
-    
-    // Convert to Int16 PCM
-    const pcmBuffer = new Int16Array(downsampled.length)
-    for (let i = 0; i < downsampled.length; i++) {
-      const s = Math.max(-1, Math.min(1, downsampled[i]))
-      pcmBuffer[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
-    }
-    
-    const audioBlob = new Blob([pcmBuffer.buffer], { type: 'audio/pcm' })
-    
-    // Send to ASR backend
-    inputMessage.value = '正在识别语音中...'
+const { recording, toggleRecording, cleanup: cleanupRecordingResources } = useRecorder({
+  transcribe: async (audioBlob) => {
     const res = await ai.asr(audioBlob)
-    if (res.code === 200 && res.data) {
-      inputMessage.value = res.data
-    } else {
-      inputMessage.value = ''
-      alert(res.message || '语音识别失败，请检查密钥配置')
-    }
-  } catch (err) {
-    console.error('处理录音失败:', err)
+    if (res.code === 200 && res.data) return res.data
+    throw new Error(res.message || '语音识别失败，请检查密钥配置')
+  },
+  onPending: () => {
+    inputMessage.value = '正在识别语音中...'
+  },
+  onText: (text) => {
+    inputMessage.value = text
+  },
+  onError: (err, userMessage) => {
+    console.error('录音失败:', err)
     inputMessage.value = ''
-    alert('录音处理或识别失败：' + err.message)
+    alert(userMessage)
   }
+})
+
+const selectCitation = (cite, index) => {
+  selectedCitationIndex.value = index
+  openPdfFromCitation(cite)
 }
 
 const openPdfFromCitation = (cite) => {
   if (cite.minioUrl) {
     const ext = cite.sourceName?.split('.').pop().toLowerCase() || ''
     if (ext === 'pdf') {
-      previewPdfUrl.value = cite.minioUrl
+      previewPdfUrl.value = buildPdfPreviewUrl(cite)
       previewPdfName.value = cite.sourceName
     } else {
-      alert(`文档 《${cite.sourceName}》 不是 PDF 格式，暂不支持在线预览，您可以到文档管理下载。`)
+      previewPdfUrl.value = cite.minioUrl
+      previewPdfName.value = cite.sourceName
     }
   } else {
     alert('该演示引文不支持在线预览。')
   }
+}
+
+const buildPdfPreviewUrl = (cite) => {
+  const page = extractCitationPage(cite)
+  return page ? `${cite.minioUrl}#page=${page}` : cite.minioUrl
+}
+
+const extractCitationPage = (cite) => {
+  const text = `${cite.label || ''} ${cite.text || ''}`
+  const match = text.match(/(?:Page|第)\s*(\d+)/i)
+  return match ? Number(match[1]) : null
 }
 
 // Watch layout-triggered event for new session
@@ -520,6 +386,8 @@ onUnmounted(() => {
   if (knowledgePollTimer) {
     clearInterval(knowledgePollTimer)
   }
+  recording.value = false
+  cleanupRecordingResources()
   if (currentSessionId.value && hasNewTurns.value) {
     ai.extractProfile(currentSessionId.value, authStore.userId).catch(() => {})
   }
@@ -561,6 +429,8 @@ const initiateNewSession = async () => {
       currentSessionId.value = newSession
       chatMessages.value = []
       citationsList.value = []
+      retrievalDebug.value = null
+      selectedCitationIndex.value = -1
       lastRouteDecision.value = null
     }
   } catch (err) {
@@ -580,6 +450,8 @@ const selectSession = async (sessionId) => {
   currentSessionId.value = sessionId
   chatMessages.value = []
   citationsList.value = []
+  retrievalDebug.value = null
+  selectedCitationIndex.value = -1
   lastRouteDecision.value = null
   hasNewTurns.value = false
   try {
@@ -621,6 +493,8 @@ const sendMessage = async () => {
 
   const userQuery = inputMessage.value.trim()
   citationsList.value = []
+  retrievalDebug.value = null
+  selectedCitationIndex.value = -1
   updateKnowledgeBanner()
   chatMessages.value.push({ role: 'user', content: userQuery })
   inputMessage.value = ''
@@ -731,6 +605,7 @@ const revisePlan = (plan, messageIndex) => {
 
 const clearCitations = () => {
   citationsList.value = []
+  selectedCitationIndex.value = -1
 }
 
 const parseSseMessage = (message) => {
@@ -770,6 +645,15 @@ const handleSseMessage = (message, aiMessageIndex) => {
       updateKnowledgeBanner()
     } catch (e) {
       console.error('解析引文失败:', e)
+    }
+    return
+  }
+
+  if (parsed.eventType === 'retrieval_debug') {
+    try {
+      retrievalDebug.value = parsed.dataContent ? JSON.parse(parsed.dataContent) : null
+    } catch (e) {
+      console.error('解析 RAG 诊断失败:', e)
     }
     return
   }

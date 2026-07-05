@@ -47,7 +47,7 @@ public class FileProcessConsumer {
         try (InputStream fileStream = downloadFromMinio(task.getMinioUrl())) {
             ensureFileActive(task.getUserId(), task.getFileHash());
             if (task.getFileHash() != null) {
-                documentFileService.updateStatus(task.getUserId(), task.getFileHash(), DocumentFileStatus.CHUNKING);
+                documentFileService.updateStatus(task.getUserId(), task.getFileHash(), DocumentFileStatus.PROCESSING);
             }
 
             MediaProcessor processor = ragUnitService.findProcessorByMimeType(task.getMimeType());
@@ -61,6 +61,9 @@ public class FileProcessConsumer {
                     task.getMimeType(),
                     task.getMinioUrl()
             );
+            if (task.getFileHash() != null) {
+                documentFileService.updateStatus(task.getUserId(), task.getFileHash(), DocumentFileStatus.CHUNKING);
+            }
 
             // 异步主链路在这里把"叶子切片"提升为完整摘要树。
             List<RagUnit> allUnits = hierarchicalIndexingService.buildHierarchy(

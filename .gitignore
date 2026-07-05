@@ -12,6 +12,7 @@ src/main/resources/application-dev.yaml
 .claude/
 .playwright-mcp/
 .codex-*.log
+backend-*.log
 
 # runtime artifacts
 logs/
@@ -24,3 +25,6 @@ output/
 test-files/
 test_length_extrapolation.md
 /com/
+
+# one-off local utilities
+TempBcrypt.java

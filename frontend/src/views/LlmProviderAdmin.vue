@@ -282,6 +282,38 @@
           <h2 class="font-headline-sm text-headline-sm text-on-background font-semibold mb-md">最近调试结果</h2>
           <pre class="debug-pre">{{ debugResult }}</pre>
         </div>
+
+        <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-sm">
+          <div class="flex items-center justify-between mb-md">
+            <h2 class="font-headline-sm text-headline-sm text-on-background font-semibold">模型运维指标</h2>
+            <button @click="loadOpsMetrics" class="font-label-md text-label-md text-primary hover:underline">刷新</button>
+          </div>
+          <div v-if="opsMetrics.length === 0" class="text-center py-lg text-outline-variant">
+            暂无调用指标。完成一次在线调试或自定义模型对话后会生成数据。
+          </div>
+          <div v-else class="space-y-sm">
+            <div v-for="item in opsMetrics" :key="`${item.providerCode}:${item.modelCode}`" class="border border-outline-variant rounded-lg p-md bg-background space-y-sm">
+              <div class="flex items-start justify-between gap-sm">
+                <div class="min-w-0">
+                  <div class="font-semibold text-on-background truncate">{{ item.modelCode }}</div>
+                  <div class="font-label-md text-label-md text-outline">{{ item.providerCode }}</div>
+                </div>
+                <span class="px-2 py-1 rounded-full text-xs bg-primary-fixed text-primary">{{ item.successRate }}%</span>
+              </div>
+              <div class="grid grid-cols-2 gap-xs font-label-md text-label-md text-on-surface-variant">
+                <span>成功 {{ item.successCount }}</span>
+                <span>失败 {{ item.failureCount }}</span>
+                <span>平均 {{ item.averageLatencyMs }}ms</span>
+                <span>Token {{ item.estimatedTokens }}</span>
+                <span>费用 {{ item.estimatedCost }}</span>
+                <span>熔断 {{ item.circuitBreakerOpenCount }}</span>
+              </div>
+              <div v-if="item.lastError" class="text-error font-body-sm break-words">
+                最近错误：{{ item.lastError }}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -303,6 +335,7 @@ const editingModelId = ref('')
 const debugResult = ref('等待调试结果')
 const debugMode = ref('draft')
 const lastDraftDebugSuccess = ref(false)
+const opsMetrics = ref([])
 const message = reactive({ kind: 'success', text: '' })
 
 const defaultTemplate = '{"model":"{{model}}","messages":[{"role":"system","content":"{{systemPrompt}}"},{"role":"user","content":"{{message}}"}],"stream":"{{stream}}"}'
@@ -458,8 +491,16 @@ const loadAll = async () => {
   try {
     await loadProviders()
     await loadModels()
+    await loadOpsMetrics()
   } catch (err) {
     showMessage('error', err.message || '加载配置失败')
+  }
+}
+
+const loadOpsMetrics = async () => {
+  const res = await llm.opsMetrics()
+  if (res.code === 200) {
+    opsMetrics.value = res.data || []
   }
 }
 
@@ -773,6 +814,7 @@ const handleDebug = async () => {
       const summary = events.find(item => item.event === 'summary')?.data
       lastDraftDebugSuccess.value = debugMode.value === 'draft' && summary?.success === true
       showMessage(summary?.success ? 'success' : 'error', summary?.success ? '流式调试完成' : '流式调试返回失败，请查看结果')
+      await loadOpsMetrics()
       return
     }
     const res = await llm.debugProvider(buildDebugPayload())
@@ -780,6 +822,7 @@ const handleDebug = async () => {
       debugResult.value = JSON.stringify(res.data, null, 2)
       lastDraftDebugSuccess.value = debugMode.value === 'draft' && res.data?.success === true
       showMessage(res.data?.success ? 'success' : 'error', res.data?.success ? '调试完成' : '调试返回失败，请查看结果')
+      await loadOpsMetrics()
     } else {
       debugResult.value = JSON.stringify(res, null, 2)
       lastDraftDebugSuccess.value = false

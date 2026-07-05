@@ -1,0 +1,23 @@
+[
+  {
+    "id": "rag-hit-with-citation",
+    "question": "上传文档中提到的人工智能是什么？",
+    "expectedCitationContains": ["人工智能"],
+    "expectedAnswerContains": ["人工智能"],
+    "notes": "基础知识库命中用例，要求回答引用上传文档。"
+  },
+  {
+    "id": "rag-no-hit-warning",
+    "question": "知识库不存在的专有名词 xyz-no-hit-2026 是什么？",
+    "expectedCitationContains": [],
+    "expectedAnswerContains": ["未命中", "知识库"],
+    "notes": "无命中用例，前端应展示无知识库引用提示。"
+  },
+  {
+    "id": "plan-execute-confirmation",
+    "question": "请先规划如何总结这份文档，再等我确认后执行。",
+    "expectedCitationContains": [],
+    "expectedAnswerContains": ["执行计划", "确认"],
+    "notes": "Plan + Execute 模式应先返回可审核计划。"
+  }
+]

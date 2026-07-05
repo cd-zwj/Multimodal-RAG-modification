@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -27,6 +28,11 @@ public class DocumentFileStatusResponse {
     private String minioUrl;
     private LocalDateTime updatedAt;
     private Boolean canDelete;
+    private Integer progressPercent;
+    private String processingStage;
+    private List<String> pipelineSteps;
+    private Boolean canRetry;
+    private Boolean canReindex;
 
     public static DocumentFileStatusResponse from(DocumentFile documentFile) {
         return DocumentFileStatusResponse.builder()
@@ -41,6 +47,13 @@ public class DocumentFileStatusResponse {
                 .minioUrl(documentFile.getMinioUrl())
                 .updatedAt(documentFile.getUpdatedAt())
                 .canDelete(!Boolean.TRUE.equals(documentFile.getDeleted()))
+                .progressPercent(DocumentTaskView.progressPercent(documentFile.getStatus()))
+                .processingStage(DocumentTaskView.processingStage(documentFile.getStatus()))
+                .pipelineSteps(DocumentTaskView.pipelineSteps(documentFile.getStatus()))
+                .canRetry(documentFile.getStatus() == DocumentFileStatus.FAILED
+                        && documentFile.getMinioUrl() != null && !documentFile.getMinioUrl().isBlank())
+                .canReindex(documentFile.getStatus() == DocumentFileStatus.SUCCESS
+                        && documentFile.getMinioUrl() != null && !documentFile.getMinioUrl().isBlank())
                 .build();
     }
 }

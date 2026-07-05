@@ -89,13 +89,22 @@
               <td class="p-sm text-on-surface-variant tabular-nums">{{ formatBytes(doc.fileSize) }}</td>
               <td class="p-sm text-on-surface-variant tabular-nums">{{ doc.chunkCount || '-' }}</td>
               <td class="p-sm">
-                <div 
-                  class="inline-flex items-center gap-xs border rounded px-xs py-xs"
-                  :class="getStatusClasses(doc.status)"
-                >
-                  <span v-if="isDocProcessing(doc.status)" class="material-symbols-outlined text-[12px] animate-spin">sync</span>
-                  <div v-else class="w-1.5 h-1.5 rounded-full" :class="[doc.status === 'SUCCESS' ? 'bg-primary' : 'bg-error']"></div>
-                  <span class="font-label-sm text-label-sm">{{ formatStatus(doc.status) }}</span>
+                <div class="min-w-[8rem] space-y-xs">
+                  <div
+                    class="inline-flex items-center gap-xs border rounded px-xs py-xs"
+                    :class="getStatusClasses(doc.status)"
+                  >
+                    <span v-if="isDocProcessing(doc.status)" class="material-symbols-outlined text-[12px] animate-spin">sync</span>
+                    <div v-else class="w-1.5 h-1.5 rounded-full" :class="[doc.status === 'SUCCESS' ? 'bg-primary' : 'bg-error']"></div>
+                    <span class="font-label-sm text-label-sm">{{ doc.processingStage || formatStatus(doc.status) }}</span>
+                  </div>
+                  <div class="h-1.5 rounded-full bg-surface-container overflow-hidden">
+                    <div
+                      class="h-full transition-all"
+                      :class="doc.status === 'FAILED' ? 'bg-error' : 'bg-primary'"
+                      :style="{ width: `${doc.progressPercent ?? statusProgress(doc.status)}%` }"
+                    ></div>
+                  </div>
                 </div>
               </td>
               <td class="p-sm text-on-surface-variant tabular-nums">{{ formatDateTime(doc.createdAt) }}</td>
@@ -108,6 +117,16 @@
                     title="预览 PDF"
                   >
                     <span class="material-symbols-outlined text-[18px]">menu_book</span>
+                  </button>
+                  <button
+                    v-if="doc.canRetry || doc.canReindex"
+                    @click="reprocessDoc(doc)"
+                    class="text-on-surface-variant hover:text-primary transition-colors p-xs rounded hover:bg-surface-variant cursor-pointer"
+                    :title="doc.canRetry ? '重试处理' : '重新索引'"
+                    :disabled="reprocessingIds.has(doc.fileHash)"
+                  >
+                    <span v-if="reprocessingIds.has(doc.fileHash)" class="material-symbols-outlined text-[18px] animate-spin">sync</span>
+                    <span v-else class="material-symbols-outlined text-[18px]">{{ doc.canRetry ? 'restart_alt' : 'refresh' }}</span>
                   </button>
                   <button 
                     @click="viewDetails(doc)"
@@ -317,6 +336,40 @@
               <div v-if="activeDocDetails.errorMessage" class="text-error font-body-sm mt-xs">
                 <strong>错误日志:</strong> {{ activeDocDetails.errorMessage }}
               </div>
+              <div class="space-y-xs">
+                <div class="flex justify-between text-label-md text-outline">
+                  <span>{{ activeDocDetails.processingStage || formatStatus(activeDocDetails.status) }}</span>
+                  <span>{{ activeDocDetails.progressPercent ?? statusProgress(activeDocDetails.status) }}%</span>
+                </div>
+                <div class="h-2 rounded-full bg-surface-container overflow-hidden">
+                  <div
+                    class="h-full"
+                    :class="activeDocDetails.status === 'FAILED' ? 'bg-error' : 'bg-primary'"
+                    :style="{ width: `${activeDocDetails.progressPercent ?? statusProgress(activeDocDetails.status)}%` }"
+                  ></div>
+                </div>
+                <div v-if="activeDocDetails.pipelineSteps?.length" class="grid grid-cols-2 gap-xs pt-xs">
+                  <div
+                    v-for="step in activeDocDetails.pipelineSteps"
+                    :key="step"
+                    class="rounded-md px-2 py-1 text-label-md"
+                    :class="pipelineStepClass(step)"
+                  >
+                    {{ pipelineStepLabel(step) }}
+                  </div>
+                </div>
+              </div>
+              <button
+                v-if="activeDocDetails.canRetry || activeDocDetails.canReindex"
+                @click="reprocessDoc(activeDocDetails)"
+                :disabled="reprocessingIds.has(activeDocDetails.fileHash)"
+                class="w-full flex items-center justify-center gap-xs bg-surface-container text-primary py-xs rounded-lg font-label-md text-label-md hover:bg-surface-container-high disabled:opacity-50"
+              >
+                <span class="material-symbols-outlined text-[16px]" :class="{ 'animate-spin': reprocessingIds.has(activeDocDetails.fileHash) }">
+                  {{ reprocessingIds.has(activeDocDetails.fileHash) ? 'sync' : (activeDocDetails.canRetry ? 'restart_alt' : 'refresh') }}
+                </span>
+                {{ activeDocDetails.canRetry ? '重试处理' : '重新索引' }}
+              </button>
             </div>
           </div>
           
@@ -386,6 +439,7 @@ const uploading = ref(false)
 
 const activeDocDetails = ref(null)
 const deletingIds = ref(new Set()) // hashes currently in deletion process
+const reprocessingIds = ref(new Set())
 const activeTaskIds = ref(new Map()) // taskId -> fileHash currently polling delete status
 
 const previewPdfUrl = ref('')
@@ -546,6 +600,20 @@ const isDocProcessing = (status) => {
          status === 'REINDEXING';
 }
 
+const statusProgress = (status) => {
+  const map = {
+    'UPLOADING': 10,
+    'UPLOAD_SUCCESS': 25,
+    'PROCESSING': 35,
+    'CHUNKING': 55,
+    'VECTORIZING': 80,
+    'REINDEXING': 45,
+    'SUCCESS': 100,
+    'FAILED': 100
+  }
+  return map[status] ?? 0
+}
+
 const formatStatus = (status) => {
   const map = {
     'UPLOADING': '上传中',
@@ -573,6 +641,15 @@ const getUploadStatusClasses = (status) => {
   return 'bg-surface-container text-outline'
 }
 
+const pipelineStepLabel = (step) => step?.split(':')[0] || step
+
+const pipelineStepClass = (step) => {
+  const state = step?.split(':')[1]
+  if (state === 'done') return 'bg-primary-fixed text-primary'
+  if (state === 'current') return 'bg-secondary-fixed text-secondary'
+  return 'bg-surface-container text-outline'
+}
+
 const deleteDoc = async (doc) => {
   if (confirm(`确认要从知识库中删除文档 《${doc.filename}》 吗？`)) {
     try {
@@ -592,6 +669,32 @@ const deleteDoc = async (doc) => {
       deletingIds.value.delete(doc.fileHash)
       alert(err.message || '删除失败')
     }
+  }
+}
+
+const reprocessDoc = async (doc) => {
+  const action = doc.canRetry ? '重试处理' : '重新索引'
+  if (!confirm(`确认要${action}文档《${doc.filename}》吗？`)) return
+  try {
+    reprocessingIds.value.add(doc.fileHash)
+    const res = await documents.reprocess(doc.fileHash, authStore.userId)
+    if (res.code === 200) {
+      doc.status = 'REINDEXING'
+      doc.processingStage = '重索引'
+      doc.progressPercent = 45
+      doc.canRetry = false
+      doc.canReindex = false
+      if (activeDocDetails.value?.fileHash === doc.fileHash) {
+        activeDocDetails.value = { ...activeDocDetails.value, ...doc }
+      }
+      await loadDocuments()
+    } else {
+      alert(res.message || `${action}失败`)
+    }
+  } catch (err) {
+    alert(err.message || `${action}失败`)
+  } finally {
+    reprocessingIds.value.delete(doc.fileHash)
   }
 }
 
