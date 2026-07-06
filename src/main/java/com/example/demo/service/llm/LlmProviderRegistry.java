@@ -16,7 +16,6 @@ public class LlmProviderRegistry {
 
     private final LlmProviderConfigMapper llmProviderConfigMapper;
     private final LlmModelConfigMapper llmModelConfigMapper;
-    private final LlmSecretCrypto llmSecretCrypto;
     private final Map<String, RuntimeLlmProvider> providers = new ConcurrentHashMap<>();
     private final Map<String, RuntimeLlmModel> models = new ConcurrentHashMap<>();
 
@@ -25,7 +24,6 @@ public class LlmProviderRegistry {
                                LlmSecretCrypto llmSecretCrypto) {
         this.llmProviderConfigMapper = llmProviderConfigMapper;
         this.llmModelConfigMapper = llmModelConfigMapper;
-        this.llmSecretCrypto = llmSecretCrypto;
     }
 
     @PostConstruct
@@ -98,7 +96,8 @@ public class LlmProviderRegistry {
                 .protocolType(config.getProtocolType())
                 .authType(config.getAuthType())
                 .endpointUrl(config.getEndpointUrl())
-                .apiKey(llmSecretCrypto.decrypt(config.getApiKeyCiphertext()))
+                .apiKey(null)
+                .apiKeyCiphertext(config.getApiKeyCiphertext())
                 .defaultModel(config.getDefaultModel())
                 .defaultHeadersJson(config.getDefaultHeadersJson())
                 .requestTemplateJson(config.getRequestTemplateJson())

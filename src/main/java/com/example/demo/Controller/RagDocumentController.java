@@ -111,6 +111,6 @@ public class RagDocumentController {
     @SaCheckPermission("document:delete-status")
     @GetMapping("/delete-status/{taskId}")
     public ApiResponse<DeleteTaskStatus> getDeleteStatus(@PathVariable String taskId) {
-        return ragDocumentApplicationService.getDeleteStatus(taskId);
+        return ragDocumentApplicationService.getDeleteStatus(taskId, authContextService.getCurrentUserId());
     }
 }

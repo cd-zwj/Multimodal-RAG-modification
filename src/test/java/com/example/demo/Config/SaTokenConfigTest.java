@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -26,7 +28,7 @@ class SaTokenConfigTest {
         when(authRegistration.addPathPatterns(org.mockito.ArgumentMatchers.<String[]>any())).thenReturn(authRegistration);
         when(authRegistration.excludePathPatterns(org.mockito.ArgumentMatchers.<String[]>any())).thenReturn(authRegistration);
 
-        new SaTokenConfig(authSeedService, rateLimitInterceptor).addInterceptors(registry);
+        new SaTokenConfig(authSeedService, rateLimitInterceptor, false).addInterceptors(registry);
 
         verify(rateLimitRegistration).addPathPatterns(
                 "/auth/login",
@@ -34,5 +36,21 @@ class SaTokenConfigTest {
                 "/auth/password/forgot/request",
                 "/ai/multi-turn/chat"
         );
+    }
+
+    @Test
+    void shouldNotAllowSwaggerAnonymouslyByDefault() {
+        SaTokenConfig config = new SaTokenConfig(mock(AuthSeedService.class), mock(RateLimitInterceptor.class), false);
+
+        assertFalse(config.authExcludePathPatterns().contains("/swagger-ui/**"));
+        assertFalse(config.authExcludePathPatterns().contains("/v3/api-docs/**"));
+    }
+
+    @Test
+    void shouldAllowSwaggerAnonymouslyOnlyWhenExplicitlyEnabled() {
+        SaTokenConfig config = new SaTokenConfig(mock(AuthSeedService.class), mock(RateLimitInterceptor.class), true);
+
+        assertTrue(config.authExcludePathPatterns().contains("/swagger-ui/**"));
+        assertTrue(config.authExcludePathPatterns().contains("/v3/api-docs/**"));
     }
 }

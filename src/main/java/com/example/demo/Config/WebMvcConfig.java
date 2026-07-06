@@ -38,7 +38,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .allowedOrigins(origins.toArray(new String[0]))
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
-                .allowCredentials(true)
+                .allowCredentials(corsProperties.isAllowCredentials())
                 .maxAge(CORS_MAX_AGE);
     }
 

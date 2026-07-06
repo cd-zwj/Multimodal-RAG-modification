@@ -40,5 +40,7 @@ public class LlmProviderResponse {
 
     private String remark;
 
+    private boolean hasApiKey;
+
     private String maskedApiKey;
 }

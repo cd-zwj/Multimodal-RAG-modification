@@ -168,6 +168,12 @@ rag:
 
 llm:
   secret-key: ${LLM_SECRET_KEY:}
+  debug:
+    persist-detail: false
+    max-response-bytes: 1048576
+    max-sse-events: 1000
+    max-stream-duration-ms: 120000
+    max-active-streams: 50
 
 sa-token:
   token-name: satoken
@@ -182,7 +188,11 @@ auth:
     expose-reset-code: false
 
 app:
+  security:
+    trusted-proxies: ${TRUSTED_PROXIES:}
+    allow-public-swagger: false
   cors:
+    allow-credentials: false
     allowed-origins:
       - http://localhost:5173
       - http://localhost:3000
@@ -222,6 +232,12 @@ resilience4j:
       dashscope-chat:
         timeout-duration: 60s
         cancel-running-future: false
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
 
 # S-2: Actuator security - restrict to health & info, hide details unless authorized
 management:

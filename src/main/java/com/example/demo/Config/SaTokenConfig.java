@@ -4,19 +4,27 @@ import cn.dev33.satoken.interceptor.SaInterceptor;
 import cn.dev33.satoken.stp.StpUtil;
 import com.example.demo.service.AuthSeedService;
 import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Configuration
 public class SaTokenConfig implements WebMvcConfigurer {
 
     private final AuthSeedService authSeedService;
     private final RateLimitInterceptor rateLimitInterceptor;
+    private final boolean allowPublicSwagger;
 
-    public SaTokenConfig(AuthSeedService authSeedService, RateLimitInterceptor rateLimitInterceptor) {
+    public SaTokenConfig(AuthSeedService authSeedService,
+                         RateLimitInterceptor rateLimitInterceptor,
+                         @Value("${app.security.allow-public-swagger:false}") boolean allowPublicSwagger) {
         this.authSeedService = authSeedService;
         this.rateLimitInterceptor = rateLimitInterceptor;
+        this.allowPublicSwagger = allowPublicSwagger;
     }
 
     @Override
@@ -34,20 +42,27 @@ public class SaTokenConfig implements WebMvcConfigurer {
             }
         })
                 .addPathPatterns("/**")
-                .excludePathPatterns(
-                        "/auth/login",
-                        "/auth/register",
-                        "/error",
-                        "/",
-                        "/index.html",
-                        "/static/**",
-                        "/css/**",
-                        "/js/**",
-                        "/favicon.ico",
-                        "/swagger-ui/**",
-                        "/swagger-ui.html",
-                        "/v3/api-docs/**"
-                );
+                .excludePathPatterns(authExcludePathPatterns().toArray(String[]::new));
+    }
+
+    List<String> authExcludePathPatterns() {
+        List<String> patterns = new ArrayList<>(List.of(
+                "/auth/login",
+                "/auth/register",
+                "/error",
+                "/",
+                "/index.html",
+                "/static/**",
+                "/css/**",
+                "/js/**",
+                "/favicon.ico"
+        ));
+        if (allowPublicSwagger) {
+            patterns.add("/swagger-ui/**");
+            patterns.add("/swagger-ui.html");
+            patterns.add("/v3/api-docs/**");
+        }
+        return List.copyOf(patterns);
     }
 
     @PostConstruct

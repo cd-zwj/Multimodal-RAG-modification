@@ -1,6 +1,7 @@
 package com.example.demo.Controller;
 
 import com.example.demo.model.dto.ApiResponse;
+import com.example.demo.Config.ClientIpResolver;
 import com.example.demo.model.dto.auth.AdminResetPasswordRequest;
 import com.example.demo.model.dto.auth.ChangePasswordRequest;
 import com.example.demo.model.dto.auth.ForgotPasswordConfirmRequest;
@@ -24,7 +25,7 @@ class AuthControllerTest {
     @Test
     void shouldDelegateLogin() {
         AuthApplicationService authApplicationService = mock(AuthApplicationService.class);
-        AuthController controller = new AuthController(authApplicationService);
+        AuthController controller = controller(authApplicationService);
         LoginRequest request = new LoginRequest("alice", "Secret123");
         LoginResponse response = new LoginResponse("u-1", "alice", "alice@example.com", "token", List.of("admin"), List.of("ai:session:create"));
         when(authApplicationService.login(request)).thenReturn(ApiResponse.success(response));
@@ -38,7 +39,7 @@ class AuthControllerTest {
     @Test
     void shouldDelegateRegisterAndProfile() {
         AuthApplicationService authApplicationService = mock(AuthApplicationService.class);
-        AuthController controller = new AuthController(authApplicationService);
+        AuthController controller = controller(authApplicationService);
         RegisterRequest registerRequest = new RegisterRequest("alice", "Secret123", "alice@example.com");
         UserInfoResponse userInfo = new UserInfoResponse("u-1", "alice", "alice@example.com", "ACTIVE", List.of("admin"), List.of("ai:session:create"));
 
@@ -53,7 +54,7 @@ class AuthControllerTest {
     @Test
     void shouldDelegatePasswordOperations() {
         AuthApplicationService authApplicationService = mock(AuthApplicationService.class);
-        AuthController controller = new AuthController(authApplicationService);
+        AuthController controller = controller(authApplicationService);
 
         ChangePasswordRequest changeRequest = new ChangePasswordRequest("OldSecret1", "NewSecret1", "NewSecret1");
         AdminResetPasswordRequest resetRequest = new AdminResetPasswordRequest("alice", "AdminSecret1", "AdminSecret1");
@@ -72,5 +73,9 @@ class AuthControllerTest {
         jakarta.servlet.http.HttpServletRequest httpRequest = mock(jakarta.servlet.http.HttpServletRequest.class);
         when(httpRequest.getRemoteAddr()).thenReturn("127.0.0.1");
         assertEquals("密码找回成功，请使用新密码登录", controller.confirmForgotPassword(confirmRequest, httpRequest).getMessage());
+    }
+
+    private AuthController controller(AuthApplicationService authApplicationService) {
+        return new AuthController(authApplicationService, new ClientIpResolver(""));
     }
 }

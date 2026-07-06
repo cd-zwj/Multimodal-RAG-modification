@@ -1,0 +1,10 @@
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+app:
+  cors:
+    allow-credentials: false
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}

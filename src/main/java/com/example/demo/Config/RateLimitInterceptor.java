@@ -23,14 +23,17 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final ClientIpResolver clientIpResolver;
     private final int maxRequests;
     private final int windowSeconds;
 
     public RateLimitInterceptor(StringRedisTemplate redisTemplate, ObjectMapper objectMapper,
+                                ClientIpResolver clientIpResolver,
                                 @Value("${rate-limit.max-requests:10}") int maxRequests,
                                 @Value("${rate-limit.window-seconds:60}") int windowSeconds) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.clientIpResolver = clientIpResolver;
         this.maxRequests = maxRequests;
         this.windowSeconds = windowSeconds;
     }
@@ -38,7 +41,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws Exception {
-        String clientIp = resolveClientIp(request);
+        String clientIp = clientIpResolver.resolve(request);
         String key = "rate_limit:" + request.getRequestURI() + ":" + clientIp;
 
         Long count = redisTemplate.opsForValue().increment(key);
@@ -56,18 +59,5 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         }
 
         return true;
-    }
-
-    private String resolveClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            // 取第一个 IP（客户端真实 IP）
-            return xff.split(",")[0].trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-        return request.getRemoteAddr();
     }
 }

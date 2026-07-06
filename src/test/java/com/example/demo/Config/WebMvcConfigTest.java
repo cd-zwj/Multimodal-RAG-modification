@@ -12,9 +12,15 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 class WebMvcConfigTest {
+
+    @Test
+    void shouldDisableCorsCredentialsByDefault() {
+        assertFalse(new CorsProperties().isAllowCredentials());
+    }
 
     @Test
     void shouldPropagateRequestContextIntoAsyncTask() {

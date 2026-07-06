@@ -21,11 +21,11 @@ import com.example.demo.service.AuthContextService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +46,7 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
     private final ObjectMapper objectMapper;
     private final LlmJsonConfigValidator llmJsonConfigValidator;
     private final LlmDebugRateLimiter llmDebugRateLimiter;
+    private final boolean persistDebugDetail;
 
     @Autowired
     public LlmProviderApplicationServiceImpl(LlmProviderConfigMapper llmProviderConfigMapper,
@@ -57,7 +58,8 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
                                              AuthContextService authContextService,
                                              ObjectMapper objectMapper,
                                              LlmJsonConfigValidator llmJsonConfigValidator,
-                                             LlmDebugRateLimiter llmDebugRateLimiter) {
+                                             LlmDebugRateLimiter llmDebugRateLimiter,
+                                             @Value("${llm.debug.persist-detail:false}") boolean persistDebugDetail) {
         this.llmProviderConfigMapper = llmProviderConfigMapper;
         this.llmModelConfigMapper = llmModelConfigMapper;
         this.llmDebugSessionMapper = llmDebugSessionMapper;
@@ -68,6 +70,7 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
         this.objectMapper = objectMapper;
         this.llmJsonConfigValidator = llmJsonConfigValidator;
         this.llmDebugRateLimiter = llmDebugRateLimiter;
+        this.persistDebugDetail = persistDebugDetail;
     }
 
     public LlmProviderApplicationServiceImpl(LlmProviderConfigMapper llmProviderConfigMapper,
@@ -88,7 +91,8 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
                 authContextService,
                 objectMapper,
                 new LlmJsonConfigValidator(objectMapper),
-                new LlmDebugRateLimiter()
+                new LlmDebugRateLimiter(),
+                false
         );
     }
 
@@ -153,12 +157,10 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
         config.setUpdatedBy(authContextService.getCurrentUserId());
         config.setVersion(config.getVersion() == null ? 1 : config.getVersion() + 1);
 
-        String plainApiKey = null;
+        String plainApiKeyForResponse = null;
         if (request.getApiKey() != null && !request.getApiKey().isBlank()) {
-            plainApiKey = request.getApiKey().trim();
-            config.setApiKeyCiphertext(llmSecretCrypto.encrypt(plainApiKey));
-        } else if (config.getApiKeyCiphertext() != null) {
-            plainApiKey = llmSecretCrypto.decrypt(config.getApiKeyCiphertext());
+            plainApiKeyForResponse = request.getApiKey().trim();
+            config.setApiKeyCiphertext(llmSecretCrypto.encrypt(plainApiKeyForResponse));
         }
 
         llmProviderConfigMapper.updateById(config);
@@ -168,7 +170,7 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
             llmProviderRegistry.unregister(config.getProviderCode());
         }
 
-        return ApiResponse.success(toResponse(config, plainApiKey));
+        return ApiResponse.success(toResponse(config, plainApiKeyForResponse));
     }
 
     @Override
@@ -197,8 +199,7 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
                 llmProviderRegistry.registerModel(model);
             }
         }
-        String plainApiKey = config.getApiKeyCiphertext() == null ? null : llmSecretCrypto.decrypt(config.getApiKeyCiphertext());
-        return ApiResponse.success(toResponse(config, plainApiKey));
+        return ApiResponse.success(toResponse(config));
     }
 
     @Override
@@ -209,8 +210,7 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
         config.setVersion(config.getVersion() == null ? 1 : config.getVersion() + 1);
         llmProviderConfigMapper.updateById(config);
         llmProviderRegistry.unregister(config.getProviderCode());
-        String plainApiKey = config.getApiKeyCiphertext() == null ? null : llmSecretCrypto.decrypt(config.getApiKeyCiphertext());
-        return ApiResponse.success(toResponse(config, plainApiKey));
+        return ApiResponse.success(toResponse(config));
     }
 
     @Override
@@ -220,7 +220,7 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
                 : llmProviderConfigMapper.selectEnabledProviders();
         List<LlmProviderResponse> responses = providers
                 .stream()
-                .map(config -> toResponse(config, llmSecretCrypto.decrypt(config.getApiKeyCiphertext())))
+                .map(this::toResponse)
                 .toList();
         return ApiResponse.success(responses);
     }
@@ -333,15 +333,11 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
     @Override
     public Flux<ServerSentEvent<String>> debugStream(LlmDebugRequest request) {
         request.setStream(true);
-        ApiResponse<LlmDebugResponse> result = debug(request);
-        LlmDebugResponse response = result.getData();
-        List<ServerSentEvent<String>> events = new ArrayList<>();
-        for (Map<String, Object> streamEvent : response.getStreamEvents()) {
-            events.add(sse("chunk", writeValueSafely(streamEvent)));
-        }
-        events.add(sse("summary", writeValueSafely(response)));
-        events.add(sse("done", "{}"));
-        return Flux.fromIterable(events);
+        llmDebugRateLimiter.check(authContextService.getCurrentUserId(), resolveDebugProviderKey(request));
+        RuntimeLlmProvider provider = request.getProviderCode() != null && !request.getProviderCode().isBlank()
+                ? llmProviderRegistry.getRequired(request.getProviderCode().trim())
+                : buildTemporaryProvider(request.getProviderConfig());
+        return httpLlmDebugClient.debugStream(provider, request);
     }
 
     private LlmProviderConfig requireProvider(String id) {
@@ -412,7 +408,11 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
         }
     }
 
-    private LlmProviderResponse toResponse(LlmProviderConfig config, String plainApiKey) {
+    private LlmProviderResponse toResponse(LlmProviderConfig config) {
+        return toResponse(config, null);
+    }
+
+    private LlmProviderResponse toResponse(LlmProviderConfig config, String plainApiKeyForResponse) {
         LlmProviderResponse response = new LlmProviderResponse();
         response.setId(config.getId());
         response.setProviderCode(config.getProviderCode());
@@ -430,8 +430,16 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
         response.setVersion(config.getVersion());
         response.setStatus(config.getStatus());
         response.setRemark(config.getRemark());
-        response.setMaskedApiKey(plainApiKey == null ? null : llmSecretCrypto.mask(plainApiKey));
+        response.setHasApiKey(config.getApiKeyCiphertext() != null && !config.getApiKeyCiphertext().isBlank());
+        response.setMaskedApiKey(resolveMaskedApiKey(config, plainApiKeyForResponse));
         return response;
+    }
+
+    private String resolveMaskedApiKey(LlmProviderConfig config, String plainApiKeyForResponse) {
+        if (plainApiKeyForResponse != null && !plainApiKeyForResponse.isBlank()) {
+            return llmSecretCrypto.mask(plainApiKeyForResponse);
+        }
+        return config.getApiKeyCiphertext() == null || config.getApiKeyCiphertext().isBlank() ? null : "****";
     }
 
     private LlmModelResponse toModelResponse(LlmModelConfig model, LlmProviderConfig provider) {
@@ -457,18 +465,25 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
         session.setId(UUID.randomUUID().toString());
         session.setProviderId(provider.getId());
         session.setProviderCode(provider.getProviderCode());
-        session.setDebugRequestJson(writeValueSafely(request));
-        session.setResolvedRequestJson(response.getResolvedRequestJson());
+        session.setDebugRequestJson(persistDebugDetail ? writeValueSafely(request) : null);
+        session.setResolvedRequestJson(persistDebugDetail ? response.getResolvedRequestJson() : null);
         session.setMaskedHeadersJson(response.getMaskedHeadersJson());
-        session.setRawResponseText(response.getRawResponseText());
-        session.setParsedResponseJson(writeValueSafely(response));
+        session.setRawResponseText(persistDebugDetail ? response.getRawResponseText() : null);
+        session.setParsedResponseJson(persistDebugDetail ? writeValueSafely(response) : null);
         session.setHttpStatus(response.getHttpStatus());
         session.setLatencyMs(response.getLatencyMs());
         session.setSuccess(response.isSuccess());
         session.setErrorCode(response.getErrorCode());
-        session.setErrorMessage(response.getErrorMessage());
+        session.setErrorMessage(truncate(response.getErrorMessage(), 500));
         session.setCreatedBy(authContextService.getCurrentUserId());
         llmDebugSessionMapper.insert(session);
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     private String writeValueSafely(Object value) {
@@ -492,10 +507,4 @@ public class LlmProviderApplicationServiceImpl implements LlmProviderApplication
         return "draft";
     }
 
-    private ServerSentEvent<String> sse(String event, String data) {
-        return ServerSentEvent.<String>builder()
-                .event(event)
-                .data(data)
-                .build();
-    }
 }

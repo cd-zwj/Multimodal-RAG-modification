@@ -2,12 +2,14 @@ package com.example.demo.service;
 
 import com.example.demo.model.dto.ApiResponse;
 import com.example.demo.model.dto.DeleteTaskResponse;
+import com.example.demo.model.dto.DeleteTaskStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,5 +42,21 @@ class RagDocumentApplicationServiceTest {
 
         assertEquals(400, response.getCode());
         assertEquals("参数验证失败: 无效的 SHA-256 哈希值", response.getMessage());
+    }
+
+    @Test
+    void shouldQueryDeleteStatusWithCurrentUserId() {
+        RagDocumentApplicationService service = new RagDocumentApplicationService(ragUnitService, documentDeleteService);
+        DeleteTaskStatus status = DeleteTaskStatus.builder()
+                .taskId("task-1")
+                .status(DeleteTaskStatus.OverallStatus.PROCESSING)
+                .build();
+        when(documentDeleteService.getDeleteStatus("task-1", "u1")).thenReturn(status);
+
+        ApiResponse<DeleteTaskStatus> response = service.getDeleteStatus("task-1", "u1");
+
+        assertEquals(200, response.getCode());
+        assertEquals("task-1", response.getData().getTaskId());
+        verify(documentDeleteService).getDeleteStatus("task-1", "u1");
     }
 }

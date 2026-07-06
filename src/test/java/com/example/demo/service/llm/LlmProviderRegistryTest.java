@@ -12,8 +12,12 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class LlmProviderRegistryTest {
@@ -36,14 +40,15 @@ class LlmProviderRegistryTest {
 
         when(mapper.selectEnabledProviders()).thenReturn(List.of(provider));
         when(modelMapper.selectEnabledModels()).thenReturn(java.util.List.of());
-        when(crypto.decrypt("cipher")).thenReturn("plain-api-key");
 
         LlmProviderRegistry registry = new LlmProviderRegistry(mapper, modelMapper, crypto);
         registry.reload();
 
         RuntimeLlmProvider runtime = registry.getRequired("custom-openai");
-        assertEquals("plain-api-key", runtime.getApiKey());
+        assertNull(runtime.getApiKey());
+        assertEquals("cipher", runtime.getApiKeyCiphertext());
         assertEquals("https://example.com/v1/chat/completions", runtime.getEndpointUrl());
+        verify(crypto, never()).decrypt(any());
     }
 
     @Test
@@ -86,7 +91,6 @@ class LlmProviderRegistryTest {
         when(mapper.selectEnabledProviders()).thenReturn(List.of(provider));
         when(mapper.selectById("p1")).thenReturn(provider);
         when(modelMapper.selectEnabledModels()).thenReturn(List.of(model));
-        when(crypto.decrypt("cipher")).thenReturn("plain-api-key");
 
         LlmProviderRegistry registry = new LlmProviderRegistry(mapper, modelMapper, crypto);
         registry.reload();
@@ -96,6 +100,9 @@ class LlmProviderRegistryTest {
         assertEquals("qwen-plus", runtime.getDefaultModel());
         assertEquals("{\"temperature\":0.4}", runtime.getDefaultParamsJson());
         assertEquals("{\"chat\":true,\"stream\":false}", runtime.getCapabilitiesJson());
+        assertNull(runtime.getApiKey());
+        assertEquals("cipher", runtime.getApiKeyCiphertext());
+        verify(crypto, never()).decrypt(any());
     }
 }
 

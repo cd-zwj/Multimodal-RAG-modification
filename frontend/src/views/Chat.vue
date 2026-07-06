@@ -258,6 +258,7 @@ import { useAuthStore } from '../store/auth'
 import { ai, documents, llm } from '../api'
 import { useRecorder } from '../composables/useRecorder'
 import CitationPanel from '../components/CitationPanel.vue'
+import { allowedUriPattern, isAllowedMarkdownLink } from '../utils/markdownSecurity'
 
 const props = defineProps({
   newSessionTrigger: {
@@ -722,6 +723,7 @@ const markdownRenderer = new MarkdownIt({
   breaks: true,
   linkify: true
 })
+markdownRenderer.validateLink = isAllowedMarkdownLink
 
 const defaultLinkOpenRenderer = markdownRenderer.renderer.rules.link_open || ((tokens, idx, options, env, self) => {
   return self.renderToken(tokens, idx, options)
@@ -788,9 +790,36 @@ const applySourcePills = (html) => {
 
 const sanitizeHtml = (html) => {
   return DOMPurify.sanitize(html, {
-    USE_PROFILES: { html: true },
-    ALLOWED_ATTR: ['class', 'href', 'target', 'rel']
+    ALLOWED_TAGS: [
+      'a', 'blockquote', 'br', 'code', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'hr', 'li', 'ol', 'p', 'pre', 's', 'span', 'strong', 'table', 'tbody', 'td',
+      'th', 'thead', 'tr', 'ul'
+    ],
+    ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
+    ALLOWED_URI_REGEXP: allowedUriPattern
   })
+}
+
+const secureRenderedLinks = (html) => {
+  if (!html || typeof DOMParser === 'undefined') return html || ''
+
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html')
+  const root = doc.body.firstElementChild
+  if (!root) return html
+
+  root.querySelectorAll('a[href]').forEach((link) => {
+    const href = link.getAttribute('href')
+    if (!isAllowedMarkdownLink(href)) {
+      link.removeAttribute('href')
+      link.removeAttribute('target')
+      link.removeAttribute('rel')
+      return
+    }
+    link.setAttribute('target', '_blank')
+    link.setAttribute('rel', 'noopener noreferrer')
+  })
+
+  return root.innerHTML
 }
 
 const renderMarkdownToHtml = (content) => {
@@ -798,7 +827,7 @@ const renderMarkdownToHtml = (content) => {
 
   const rendered = markdownRenderer.render(content)
   const enhanced = applySourcePills(rendered)
-  return sanitizeHtml(enhanced)
+  return secureRenderedLinks(sanitizeHtml(enhanced))
 }
 
 const formatMessageContent = (content, role, index) => {

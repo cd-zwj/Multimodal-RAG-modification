@@ -16,6 +16,7 @@ public class RuntimeLlmProvider {
     LlmAuthType authType;
     String endpointUrl;
     String apiKey;
+    String apiKeyCiphertext;
     String defaultModel;
     String defaultHeadersJson;
     String requestTemplateJson;
@@ -36,6 +37,7 @@ public class RuntimeLlmProvider {
                 .authType(authType)
                 .endpointUrl(endpointUrl)
                 .apiKey(apiKey)
+                .apiKeyCiphertext(apiKeyCiphertext)
                 .defaultModel(model.getRemoteModelName())
                 .defaultHeadersJson(defaultHeadersJson)
                 .requestTemplateJson(requestTemplateJson)

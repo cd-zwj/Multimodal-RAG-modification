@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -79,12 +80,16 @@ public class DocumentDeleteService {
         return asyncDeleteDocument(userId, documentFile.getFileHash());
     }
 
-    public DeleteTaskStatus getDeleteStatus(String taskId) {
+    public DeleteTaskStatus getDeleteStatus(String taskId, String userId) {
         Object obj = redisTemplate.opsForValue().get(DELETE_TASK_PREFIX + taskId);
         if (obj == null) {
             throw new RuntimeException("任务不存在或已过期: " + taskId);
         }
-        return DeleteTaskStatus.fromTask((FileDeleteTask) obj);
+        FileDeleteTask task = (FileDeleteTask) obj;
+        if (!Objects.equals(task.getUserId(), userId)) {
+            throw new RuntimeException("任务不存在或已过期: " + taskId);
+        }
+        return DeleteTaskStatus.fromTask(task);
     }
 
     @Deprecated

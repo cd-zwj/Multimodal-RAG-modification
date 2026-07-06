@@ -21,7 +21,10 @@ import com.example.demo.model.llm.LlmProviderStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.codec.ServerSentEvent;
+import reactor.core.publisher.Flux;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -145,6 +148,13 @@ class LlmProviderApplicationServiceTest {
         verify(debugSessionMapper).insert(org.mockito.ArgumentMatchers.<LlmDebugSession>any());
         assertEquals("custom-openai", capturedSession.get().getProviderCode());
         assertEquals(Boolean.TRUE, capturedSession.get().getSuccess());
+        assertEquals("{\"Authorization\":\"Bearer ****\"}", capturedSession.get().getMaskedHeadersJson());
+        assertEquals(200, capturedSession.get().getHttpStatus());
+        assertEquals(123L, capturedSession.get().getLatencyMs());
+        assertEquals(null, capturedSession.get().getDebugRequestJson());
+        assertEquals(null, capturedSession.get().getResolvedRequestJson());
+        assertEquals(null, capturedSession.get().getRawResponseText());
+        assertEquals(null, capturedSession.get().getParsedResponseJson());
     }
 
     @Test
@@ -165,29 +175,14 @@ class LlmProviderApplicationServiceTest {
         config.setAuthType(LlmAuthType.BEARER);
         config.setEndpointUrl("https://example.com/v1/chat/completions");
         config.setDefaultModel("qwen-plus");
+        config.setApiKeyCiphertext("cipher");
         config.setConnectTimeoutMs(5000);
         config.setReadTimeoutMs(30000);
         config.setVersion(1);
         config.setStatus(LlmProviderStatus.ENABLED);
         config.setRemark("test");
 
-        RuntimeLlmProvider runtimeProvider = RuntimeLlmProvider.builder()
-                .id("p1")
-                .providerCode("custom-openai")
-                .providerName("自定义 OpenAI")
-                .protocolType(LlmProtocolType.OPENAI_COMPATIBLE)
-                .authType(LlmAuthType.BEARER)
-                .endpointUrl("https://example.com/v1/chat/completions")
-                .apiKey("sk-test")
-                .defaultModel("qwen-plus")
-                .connectTimeoutMs(5000)
-                .readTimeoutMs(30000)
-                .build();
-
         when(providerMapper.selectEnabledProviders()).thenReturn(java.util.List.of(config));
-        when(registry.getRequired("custom-openai")).thenReturn(runtimeProvider);
-        when(crypto.mask("sk-test")).thenReturn("****");
-        when(crypto.decrypt(any())).thenReturn("sk-test");
 
         LlmProviderApplicationServiceImpl service = new LlmProviderApplicationServiceImpl(
                 providerMapper,
@@ -205,6 +200,9 @@ class LlmProviderApplicationServiceTest {
         assertEquals(200, result.getCode());
         assertEquals(1, result.getData().size());
         assertEquals("custom-openai", result.getData().get(0).getProviderCode());
+        assertTrue(result.getData().get(0).isHasApiKey());
+        assertEquals("****", result.getData().get(0).getMaskedApiKey());
+        verify(crypto, never()).decrypt(any());
     }
     @Test
     void shouldDebugTemporaryProviderWithoutPersistingOrRegisterLookup() {
@@ -260,6 +258,62 @@ class LlmProviderApplicationServiceTest {
         verify(debugSessionMapper, never()).insert(org.mockito.ArgumentMatchers.<LlmDebugSession>any());
         verify(providerMapper, never()).insert(org.mockito.ArgumentMatchers.<LlmProviderConfig>any());
     }
+
+    @Test
+    void shouldStreamDebugWithoutAggregatingFullDebugResponse() {
+        LlmProviderConfigMapper providerMapper = mock(LlmProviderConfigMapper.class);
+        LlmModelConfigMapper modelMapper = mock(LlmModelConfigMapper.class);
+        LlmDebugSessionMapper debugSessionMapper = mock(LlmDebugSessionMapper.class);
+        LlmProviderRegistry registry = mock(LlmProviderRegistry.class);
+        LlmSecretCrypto crypto = mock(LlmSecretCrypto.class);
+        HttpLlmDebugClient debugClient = mock(HttpLlmDebugClient.class);
+        com.example.demo.service.AuthContextService authContextService = mock(com.example.demo.service.AuthContextService.class);
+        ArgumentCaptor<LlmDebugRequest> requestCaptor = ArgumentCaptor.forClass(LlmDebugRequest.class);
+
+        RuntimeLlmProvider provider = RuntimeLlmProvider.builder()
+                .id("p1")
+                .providerCode("custom-openai")
+                .endpointUrl("https://example.com/v1/chat/completions")
+                .defaultModel("qwen-plus")
+                .protocolType(LlmProtocolType.OPENAI_COMPATIBLE)
+                .authType(LlmAuthType.BEARER)
+                .apiKey("sk-test")
+                .connectTimeoutMs(5000)
+                .readTimeoutMs(30000)
+                .build();
+
+        when(registry.getRequired("custom-openai")).thenReturn(provider);
+        when(authContextService.getCurrentUserId()).thenReturn("u1");
+        when(debugClient.debugStream(any(), requestCaptor.capture())).thenReturn(Flux.just(
+                ServerSentEvent.<String>builder().event("chunk").data("{\"content\":\"你\"}").build(),
+                ServerSentEvent.<String>builder().event("done").data("{}").build()
+        ));
+
+        LlmProviderApplicationServiceImpl service = new LlmProviderApplicationServiceImpl(
+                providerMapper,
+                modelMapper,
+                debugSessionMapper,
+                registry,
+                crypto,
+                debugClient,
+                authContextService,
+                new ObjectMapper()
+        );
+
+        LlmDebugRequest request = new LlmDebugRequest();
+        request.setProviderCode("custom-openai");
+        request.setMessage("你好");
+        request.setStream(false);
+
+        List<ServerSentEvent<String>> events = service.debugStream(request).collectList().block();
+
+        assertEquals(2, events.size());
+        assertEquals("chunk", events.get(0).event());
+        assertTrue(requestCaptor.getValue().getStream());
+        verify(debugClient, never()).debug(any(), any());
+        verify(debugSessionMapper, never()).insert(org.mockito.ArgumentMatchers.<LlmDebugSession>any());
+    }
+
     @Test
     void shouldUpdateProviderWithoutChangingApiKeyWhenApiKeyIsBlank() {
         LlmProviderConfigMapper providerMapper = mock(LlmProviderConfigMapper.class);
@@ -287,8 +341,6 @@ class LlmProviderApplicationServiceTest {
 
         when(providerMapper.selectById("p1")).thenReturn(existing);
         when(authContextService.getCurrentUserId()).thenReturn("u1");
-        when(crypto.decrypt("cipher-old")).thenReturn("sk-old");
-        when(crypto.mask("sk-old")).thenReturn("****old");
 
         LlmProviderApplicationServiceImpl service = new LlmProviderApplicationServiceImpl(
                 providerMapper,
@@ -319,7 +371,10 @@ class LlmProviderApplicationServiceTest {
         assertEquals(200, response.getCode());
         assertEquals("custom-openai", response.getData().getProviderCode());
         assertEquals("新名称", response.getData().getProviderName());
+        assertTrue(response.getData().isHasApiKey());
+        assertEquals("****", response.getData().getMaskedApiKey());
         verify(crypto, never()).encrypt(any());
+        verify(crypto, never()).decrypt(any());
         verify(providerMapper).updateById(configCaptor.capture());
         verify(registry).register(configCaptor.getValue());
         assertEquals("cipher-old", configCaptor.getValue().getApiKeyCiphertext());
@@ -461,7 +516,6 @@ class LlmProviderApplicationServiceTest {
         existing.setVersion(1);
         when(providerMapper.selectById("p1")).thenReturn(existing);
         when(authContextService.getCurrentUserId()).thenReturn("u1");
-        when(crypto.decrypt("cipher")).thenReturn("sk-test");
 
         LlmProviderApplicationServiceImpl service = new LlmProviderApplicationServiceImpl(
                 providerMapper,
@@ -477,8 +531,11 @@ class LlmProviderApplicationServiceTest {
         LlmProviderResponse response = service.disableProvider("p1").getData();
 
         assertEquals(LlmProviderStatus.DISABLED, response.getStatus());
+        assertTrue(response.isHasApiKey());
+        assertEquals("****", response.getMaskedApiKey());
         verify(providerMapper).updateById(existing);
         verify(registry).unregister("custom-openai");
+        verify(crypto, never()).decrypt(any());
     }
 
     @Test
@@ -501,7 +558,6 @@ class LlmProviderApplicationServiceTest {
         when(providerMapper.selectById("p1")).thenReturn(existing);
         when(modelMapper.selectAllModels()).thenReturn(java.util.List.of(enabledModel, disabledModel));
         when(authContextService.getCurrentUserId()).thenReturn("u1");
-        when(crypto.decrypt("cipher")).thenReturn("sk-test");
 
         LlmProviderApplicationServiceImpl service = new LlmProviderApplicationServiceImpl(
                 providerMapper,
@@ -517,9 +573,12 @@ class LlmProviderApplicationServiceTest {
         LlmProviderResponse response = service.enableProvider("p1").getData();
 
         assertEquals(LlmProviderStatus.ENABLED, response.getStatus());
+        assertTrue(response.isHasApiKey());
+        assertEquals("****", response.getMaskedApiKey());
         verify(registry).register(existing);
         verify(registry).registerModel(enabledModel);
         verify(registry, never()).registerModel(disabledModel);
+        verify(crypto, never()).decrypt(any());
     }
 
     @Test

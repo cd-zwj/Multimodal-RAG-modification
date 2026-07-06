@@ -133,13 +133,13 @@ public class RagDocumentApplicationService {
         }
     }
 
-    public ApiResponse<DeleteTaskStatus> getDeleteStatus(String taskId) {
+    public ApiResponse<DeleteTaskStatus> getDeleteStatus(String taskId, String userId) {
         if (taskId == null || taskId.trim().isEmpty()) {
             return ApiResponse.validationError("任务 ID 不能为空");
         }
 
         try {
-            return ApiResponse.success("查询成功", documentDeleteService.getDeleteStatus(taskId));
+            return ApiResponse.success("查询成功", documentDeleteService.getDeleteStatus(taskId, userId));
         } catch (RuntimeException e) {
             if (containsExpiredOrNotFoundMessage(e)) {
                 return ApiResponse.notFound("删除任务");

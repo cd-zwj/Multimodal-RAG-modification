@@ -3,6 +3,7 @@ package com.example.demo.Controller;
 import cn.dev33.satoken.annotation.SaIgnore;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.annotation.SaCheckLogin;
+import com.example.demo.Config.ClientIpResolver;
 import com.example.demo.model.dto.ApiResponse;
 import com.example.demo.model.dto.auth.AdminResetPasswordRequest;
 import com.example.demo.model.dto.auth.ChangePasswordRequest;
@@ -35,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthApplicationService authApplicationService;
+    private final ClientIpResolver clientIpResolver;
 
     /**
      * 用户注册接口
@@ -138,19 +140,7 @@ public class AuthController {
     @PostMapping("/password/forgot/confirm")
     public ApiResponse<String> confirmForgotPassword(@Valid @RequestBody ForgotPasswordConfirmRequest request,
                                                      jakarta.servlet.http.HttpServletRequest httpRequest) {
-        String clientIp = resolveClientIp(httpRequest);
+        String clientIp = clientIpResolver.resolve(httpRequest);
         return authApplicationService.confirmForgotPassword(request, clientIp);
-    }
-
-    private String resolveClientIp(jakarta.servlet.http.HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-        return request.getRemoteAddr();
     }
 }
